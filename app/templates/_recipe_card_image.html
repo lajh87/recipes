@@ -1,0 +1,11 @@
+{% set card_image_indexes = preferred_recipe_image_indexes(card_recipe) %}
+{% if card_image_indexes %}
+  {% set card_image_index = card_image_indexes[0] %}
+  <a class="recipe-summary-card__image" href="{{ recipe_page_href|default(url_for('recipe_page', recipe_id=card_recipe.id)) }}">
+    <img
+      src="{{ url_for('recipe_image', recipe_id=card_recipe.id, image_index=card_image_index) }}"
+      alt="{{ card_recipe.title }} image {{ card_image_index + 1 }}"
+      loading="lazy"
+    />
+  </a>
+{% endif %}

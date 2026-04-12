@@ -1,0 +1,12 @@
+beautifulsoup4>=4.12,<5
+EbookLib>=0.18,<1
+fastapi==0.116.1
+jinja2==3.1.6
+minio==7.2.18
+openai>=1.0,<2
+pymupdf>=1.25,<2
+pydantic-settings==2.10.1
+python-multipart==0.0.20
+qdrant-client==1.15.1
+redis==6.4.0
+uvicorn[standard]==0.35.0

@@ -1,0 +1,51 @@
+services:
+  app:
+    build:
+      context: .
+    container_name: recipe-library-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    networks:
+      - default
+      - datastores
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+    container_name: recipe-library-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["python", "-m", "app.worker"]
+    networks:
+      - datastores
+
+  bootstrap:
+    build:
+      context: .
+    container_name: recipe-library-bootstrap
+    profiles: ["bootstrap"]
+    env_file:
+      - .env
+    command: ["python", "-m", "app.bootstrap"]
+    networks:
+      - datastores
+
+networks:
+  datastores:
+    external: true
+    name: ${DATASTORE_NETWORK_NAME:-shared-datastores}

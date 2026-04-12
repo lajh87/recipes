@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}{{ recipe.title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+  {% set source_metadata = recipe.source.metadata or {} %}
+  {% set image_indexes = recipe_image_indexes or [] %}
+  {% set page_metadata = recipe_page_metadata %}
+  <section class="page-hero">
+    <div class="page-hero__content">
+      <p class="page-kicker">Recipe</p>
+      <h1>{{ recipe.title }}</h1>
+      <p><a class="text-link" href="{{ url_for('cookbook_page', cookbook_id=recipe.cookbook_id) }}">{{ recipe.cookbook_title }}</a></p>
+      <div class="page-hero__meta">
+        <span>{{ recipe.ingredients|length }} ingredients</span>
+        <span>{{ recipe.method_steps|length }} steps</span>
+        <span>{{ recipe.images|length }} images</span>
+        {% if source_metadata.get('yield') %}
+          <span>{{ source_metadata.get('yield') }}</span>
+        {% endif %}
+        {% if source_metadata.get('total_time') %}
+          <span>{{ source_metadata.get('total_time') }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="detail-navigation">
+      {% set favorite_recipe = recipe %}
+      {% set favorite_button_class = 'favorite-toggle--detail' %}
+      {% include "_favorite_button.html" %}
+      {% if previous_recipe %}
+        <a class="button button--secondary" href="{{ url_for('recipe_page', recipe_id=previous_recipe.id) }}{% if selected_collection_slug %}?collection={{ selected_collection_slug }}{% endif %}">Previous</a>
+      {% endif %}
+      {% if next_recipe %}
+        <a class="button button--secondary" href="{{ url_for('recipe_page', recipe_id=next_recipe.id) }}{% if selected_collection_slug %}?collection={{ selected_collection_slug }}{% endif %}">Next</a>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="recipe-page-stack">
+    <article class="panel recipe-panel">
+      {% if recipe.images %}
+        <section class="recipe-media">
+          {% set hero_image_index = image_indexes[0] %}
+          <button
+            class="recipe-hero-image lightbox-trigger"
+            type="button"
+            data-lightbox-src="{{ url_for('recipe_image', recipe_id=recipe.id, image_index=hero_image_index) }}"
+            data-lightbox-alt="{{ recipe.title }} image {{ hero_image_index + 1 }}"
+          >
+            <img src="{{ url_for('recipe_image', recipe_id=recipe.id, image_index=hero_image_index) }}" alt="{{ recipe.title }} image {{ hero_image_index + 1 }}" />
+          </button>
+          {% if image_indexes|length > 1 %}
+            <div class="image-strip image-strip--thumbnails">
+              {% for image_index in image_indexes[1:] %}
+                <button
+                  class="image-thumb lightbox-trigger"
+                  type="button"
+                  data-lightbox-src="{{ url_for('recipe_image', recipe_id=recipe.id, image_index=image_index) }}"
+                  data-lightbox-alt="{{ recipe.title }} image {{ image_index + 1 }}"
+                >
+                  <img src="{{ url_for('recipe_image', recipe_id=recipe.id, image_index=image_index) }}" alt="{{ recipe.title }} image {{ image_index + 1 }}" />
+                </button>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </section>
+      {% endif %}
+
+      <div class="section-heading">
+        <div>
+          <h2>Recipe</h2>
+          <p>One recipe per page with extracted ingredients, method, images, and source details.</p>
+        </div>
+      </div>
+      {% if page_metadata.summary_items or page_metadata.intro_paragraphs or page_metadata.text_blocks or page_metadata.list_blocks or page_metadata.sections %}
+        <section class="recipe-page-meta">
+          {% if page_metadata.summary_items %}
+            <div class="recipe-page-meta__grid">
+              {% for item in page_metadata.summary_items %}
+                <div class="recipe-page-meta__item{% if item.label == 'Timing' %} recipe-page-meta__item--wide{% endif %}">
+                  <span class="recipe-page-meta__label">{{ item.label }}</span>
+                  <span class="recipe-page-meta__value">{{ item.value }}</span>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          {% if page_metadata.intro_paragraphs %}
+            <section class="recipe-page-meta__block">
+              <h4>{{ page_metadata.intro_heading }}</h4>
+              {% for paragraph in page_metadata.intro_paragraphs %}
+                <p>{{ paragraph }}</p>
+              {% endfor %}
+            </section>
+          {% endif %}
+
+          {% for block in page_metadata.text_blocks %}
+            <section class="recipe-page-meta__block">
+              <h4>{{ block.heading }}</h4>
+              {% for paragraph in block.paragraphs %}
+                <p>{{ paragraph }}</p>
+              {% endfor %}
+            </section>
+          {% endfor %}
+
+          {% for block in page_metadata.list_blocks %}
+            <section class="recipe-page-meta__block">
+              <h4>{{ block.heading }}</h4>
+              <ul class="detail-list">
+                {% for item in block["items"] %}
+                  <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </section>
+          {% endfor %}
+
+          {% if page_metadata.sections %}
+            <div class="recipe-page-meta__sections">
+              {% for section in page_metadata.sections %}
+                <section class="recipe-page-meta__block">
+                  <h4>{{ section.heading }}</h4>
+                  <ul class="detail-list">
+                    {% for line in section["lines"] %}
+                      <li>{{ line }}</li>
+                    {% endfor %}
+                  </ul>
+                </section>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </section>
+      {% endif %}
+      <div class="detail-grid">
+        <section>
+          <h4>Ingredients</h4>
+          <ul class="detail-list">
+            {% for ingredient in recipe.ingredients %}
+              <li>{{ ingredient.raw }}</li>
+            {% else %}
+              <li>No ingredients extracted.</li>
+            {% endfor %}
+          </ul>
+        </section>
+        <section>
+          <h4>Method</h4>
+          <ol class="detail-list">
+            {% for step in recipe.method_steps %}
+              <li>{{ step }}</li>
+            {% else %}
+              <li>No method extracted.</li>
+            {% endfor %}
+          </ol>
+        </section>
+      </div>
+
+      <section class="source-block">
+        <h4>Associated Images</h4>
+        <div class="image-strip">
+          {% for image in recipe.images %}
+            <button
+              class="image-thumb lightbox-trigger"
+              type="button"
+              data-lightbox-src="{{ url_for('recipe_image', recipe_id=recipe.id, image_index=loop.index0) }}"
+              data-lightbox-alt="{{ recipe.title }} image {{ loop.index }}"
+            >
+              <img src="{{ url_for('recipe_image', recipe_id=recipe.id, image_index=loop.index0) }}" alt="{{ recipe.title }} image {{ loop.index }}" />
+            </button>
+          {% else %}
+            <p class="cookbook-card__meta">No images associated.</p>
+          {% endfor %}
+        </div>
+      </section>
+    </article>
+
+    <article class="panel review-panel">
+      <div class="section-heading">
+        <div>
+          <h2>Source Details</h2>
+          <p>Trace the extracted recipe back to its source and extraction metadata.</p>
+        </div>
+      </div>
+      <section class="source-block">
+        <h4>Source Traceability</h4>
+        <p>Open the original extracted section as plain text when you need to inspect the source directly.</p>
+        <div class="card-actions">
+          <a class="button button--secondary" href="{{ url_for('recipe_raw_text_page', recipe_id=recipe.id) }}">View Raw Text</a>
+        </div>
+      </section>
+
+      <section class="source-block">
+        <h4>Extraction Notes</h4>
+        <p><strong>Confidence:</strong> {{ recipe.extraction.confidence }}</p>
+        <p><strong>Model:</strong> {{ recipe.extraction.model }}</p>
+        <p><strong>Extracted at:</strong> {{ recipe.extraction.extracted_at }}</p>
+        <div class="pill-row">
+          {% for reason in recipe.extraction.needs_review_reasons %}
+            <span class="pill">{{ reason.replace('_', ' ') }}</span>
+          {% else %}
+            <span class="pill">No extraction flags</span>
+          {% endfor %}
+        </div>
+      </section>
+      <div class="card-actions">
+        <a class="button button--secondary" href="{{ back_href }}">{{ back_label }}</a>
+      </div>
+    </article>
+  </section>
+{% endblock %}

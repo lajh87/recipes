@@ -1,0 +1,31 @@
+{% set timing = namespace(parts=[]) %}
+{% if source_metadata.get('total_time') %}
+  {% set timing.parts = timing.parts + ['Total ' ~ source_metadata.get('total_time')] %}
+{% endif %}
+{% if source_metadata.get('prep_time') %}
+  {% set timing.parts = timing.parts + ['Prep ' ~ source_metadata.get('prep_time')] %}
+{% endif %}
+{% if source_metadata.get('cook_time') %}
+  {% set timing.parts = timing.parts + ['Cook ' ~ source_metadata.get('cook_time')] %}
+{% endif %}
+
+{% if source_metadata.get('yield') or timing.parts %}
+  <section class="recipe-card-meta">
+    {% if source_metadata.get('yield') or timing.parts %}
+      <div class="recipe-card-meta__grid">
+        {% if source_metadata.get('yield') %}
+          <div class="recipe-card-meta__item">
+            <span class="recipe-card-meta__label">Yield</span>
+            <span class="recipe-card-meta__value">{{ source_metadata.get('yield') }}</span>
+          </div>
+        {% endif %}
+        {% if timing.parts %}
+          <div class="recipe-card-meta__item recipe-card-meta__item--wide">
+            <span class="recipe-card-meta__label">Timing</span>
+            <span class="recipe-card-meta__value">{{ timing.parts|join(' · ') }}</span>
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+{% endif %}

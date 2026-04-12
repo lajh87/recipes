@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Metadata · {{ app_name }}{% endblock %}
+
+{% block content %}
+  <section class="page-hero">
+    <div class="page-hero__content">
+      <p class="page-kicker">Library</p>
+      <h1>Manage Metadata</h1>
+      <p>Edit title, author, cuisine, and published date across the library in one pass.</p>
+    </div>
+    <form class="sort-inline" action="{{ url_for('manage_cookbooks_page') }}" method="get">
+      <label class="sort-inline__label" for="manage-cookbook-sort">Sort By</label>
+      <select id="manage-cookbook-sort" name="sort" class="review-select sort-inline__select" onchange="this.form.submit()">
+        {% for option in cookbook_sort_options %}
+          <option value="{{ option.value }}" {{ 'selected' if cookbook_sort == option.value else '' }}>
+            {{ option.label }}
+          </option>
+        {% endfor %}
+      </select>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h2>Books</h2>
+        <p>Save all edited rows together. Published date accepts `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`.</p>
+      </div>
+    </div>
+    <form class="metadata-bulk-form" action="{{ url_for('bulk_update_cookbooks_form') }}" method="post">
+      <input type="hidden" name="sort" value="{{ cookbook_sort }}" />
+      {% if cookbook_groups %}
+        <div class="metadata-table">
+          {% for group in cookbook_groups %}
+            <section class="metadata-group">
+              <div class="section-heading">
+                <div>
+                  <h2>{{ group.title }}</h2>
+                  <p>{{ group["items"]|length }} items</p>
+                </div>
+              </div>
+              <div class="metadata-table">
+                {% for item in group["items"] %}
+                  <article class="metadata-row">
+                    <input type="hidden" name="cookbook_id" value="{{ item.id }}" />
+                    <a class="metadata-row__cover" href="{{ url_for('cookbook_page', cookbook_id=item.id) }}">
+                      {% if item.cover_image_key %}
+                        <img src="{{ url_for('cookbook_cover', cookbook_id=item.id) }}" alt="{{ item.title }} cover" loading="lazy" />
+                      {% else %}
+                        <span>{{ item.title[:1] }}</span>
+                      {% endif %}
+                    </a>
+                    <div class="metadata-row__fields">
+                      <label>
+                        <span class="review-note-label">Title</span>
+                        <input type="text" name="title" value="{{ item.title }}" required />
+                      </label>
+                      <label>
+                        <span class="review-note-label">Author</span>
+                        <input type="text" name="author" value="{{ item.author or '' }}" />
+                      </label>
+                      <label>
+                        <span class="review-note-label">Cuisine</span>
+                        <input type="text" name="cuisine" value="{{ item.cuisine or '' }}" />
+                      </label>
+                      <label>
+                        <span class="review-note-label">Date Published</span>
+                        <input type="text" name="published_at" value="{{ item.published_at or '' }}" placeholder="YYYY or YYYY-MM-DD" />
+                      </label>
+                    </div>
+                    <div class="metadata-row__footer">
+                      <div class="metadata-row__summary">
+                        <span class="pill">{{ item.recipe_count }} recipes</span>
+                        <span class="pill">{{ item.photo_recipe_percent }}% with photos</span>
+                      </div>
+                      <div class="metadata-row__tags">
+                        {% if item.tag_counts or item.extraction_reason_counts %}
+                          {% if item.tag_counts %}
+                            <div class="metadata-row__tag-group">
+                              <p class="metadata-row__summary-note">Tags</p>
+                              <div class="pill-row metadata-row__tag-list">
+                                {% for tag, count in item.tag_counts %}
+                                  <span class="pill">{{ tag }} ({{ count }})</span>
+                                {% endfor %}
+                              </div>
+                            </div>
+                          {% endif %}
+                          {% if item.extraction_reason_counts %}
+                            <div class="metadata-row__tag-group">
+                              <div class="pill-row metadata-row__tag-list">
+                                {% for reason, count in item.extraction_reason_counts %}
+                                  <span class="pill">{{ reason.replace('_', ' ') }} ({{ count }})</span>
+                                {% endfor %}
+                              </div>
+                            </div>
+                          {% endif %}
+                        {% endif %}
+                      </div>
+                      <a class="button button--secondary" href="{{ url_for('cookbook_page', cookbook_id=item.id) }}">Open</a>
+                    </div>
+                  </article>
+                {% endfor %}
+              </div>
+            </section>
+          {% endfor %}
+        </div>
+        <div class="card-actions">
+          <button class="button" type="submit">Save All Metadata</button>
+          <a class="button button--secondary" href="{{ url_for('index') }}?sort={{ cookbook_sort|urlencode }}">Back To Library</a>
+        </div>
+      {% else %}
+        <article class="empty-state">
+          <h3>No books to manage</h3>
+          <p>Stage a cookbook first and it will appear here.</p>
+        </article>
+      {% endif %}
+    </form>
+  </section>
+{% endblock %}

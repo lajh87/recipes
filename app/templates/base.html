@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="site-header">
+        <a class="site-brand" href="{{ url_for('index') }}">{{ app_name }}</a>
+        <nav class="site-nav">
+          <a href="{{ url_for('index') }}">Library</a>
+          <a href="{{ url_for('meal_plan_page') }}">Meal Plan</a>
+          <a href="{{ url_for('search_page') }}">Search</a>
+        </nav>
+        <form class="site-search" action="{{ url_for('search_page') }}" method="get">
+          <input class="site-search__input" type="search" name="q" placeholder="Search recipes" value="{{ search_query if search_query is defined else '' }}" />
+          <button class="button button--secondary" type="submit">Search</button>
+        </form>
+      </header>
+
+      {% if notice %}
+        <section class="notice-banner">
+          <p>{{ notice }}</p>
+        </section>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </main>
+    <div class="lightbox" id="lightbox" hidden>
+      <button class="lightbox__backdrop" type="button" data-lightbox-close aria-label="Close image view"></button>
+      <div class="lightbox__dialog" role="dialog" aria-modal="true" aria-label="Expanded recipe image">
+        <button class="lightbox__close" type="button" data-lightbox-close aria-label="Close image view">Close</button>
+        <img class="lightbox__image" src="" alt="" />
+      </div>
+    </div>
+    <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+  </body>
+</html>

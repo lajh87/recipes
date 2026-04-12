@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}Search · {{ app_name }}{% endblock %}
+
+{% block content %}
+  <section class="page-hero">
+    <div class="page-hero__content">
+      <p class="page-kicker">Search</p>
+      <h1>Find recipes by ingredient, keyword, or similarity.</h1>
+      <p>
+        Search combines exact ingredient filtering, keyword matching across recipe fields,
+        and vector similarity from Qdrant. When you enter a text query, the page also generates
+        a grounded summary over the top retrieved recipes.
+      </p>
+    </div>
+    <form class="search-form search-form--hero" action="{{ url_for('search_page') }}" method="get">
+      <label class="review-note-label" for="search-page-q">Keyword or semantic query</label>
+      <input id="search-page-q" type="search" name="q" value="{{ search_query }}" placeholder="e.g. quick tomato pasta with basil" />
+      <label class="review-note-label" for="search-page-ingredient">Add ingredient</label>
+      <div
+        class="search-selectize"
+        data-ingredient-selectize
+        data-ingredients-url="{{ url_for('ingredient_index') }}"
+      >
+        <div class="search-selectize__control" data-search-selected>
+          {% for ingredient_name in search_ingredients %}
+            <input type="hidden" name="ingredient" value="{{ ingredient_name }}" />
+          {% endfor %}
+          {% for ingredient_name in search_ingredients %}
+            <button class="search-selectize__token" type="button" data-remove-ingredient="{{ ingredient_name }}">
+              <span>{{ ingredient_name }}</span>
+              <span aria-hidden="true">×</span>
+            </button>
+          {% endfor %}
+          <input
+            id="search-page-ingredient"
+            class="search-selectize__input"
+            type="search"
+            value=""
+            placeholder="Type to search indexed ingredients"
+            autocomplete="off"
+            spellcheck="false"
+            data-ingredient-input
+            role="combobox"
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+            aria-controls="search-page-ingredient-options"
+          />
+        </div>
+        <div
+          id="search-page-ingredient-options"
+          class="search-selectize__menu"
+          data-ingredient-options
+          role="listbox"
+          hidden
+        ></div>
+      </div>
+      <p class="search-selectize__hint">Choose an indexed ingredient to add it to the search filter.</p>
+      <div class="card-actions">
+        <button class="button" type="submit">Run Search</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="grid">
+    <article class="panel" data-search-results-panel>
+      <div class="section-heading">
+        <div>
+          <h2>Search Results</h2>
+          <p>{{ search_results|length }} recipes matched the current query.</p>
+        </div>
+      </div>
+      <div class="recipe-grid">
+        {% if search_results %}
+          {% for result in search_results %}
+            {% set source_metadata = result.recipe.source.metadata or {} %}
+            {% set recipe_page_href = url_for('recipe_page', recipe_id=result.recipe.id) %}
+            <article class="recipe-summary-card{% if not result.recipe.images %} recipe-summary-card--no-image{% endif %}">
+              {% set card_recipe = result.recipe %}
+              {% include "_recipe_card_image.html" %}
+              <div class="recipe-summary-card__header">
+                <div>
+                  <h3><a class="text-link" href="{{ recipe_page_href }}">{{ result.recipe.title }}</a></h3>
+                  <p>{{ result.recipe.cookbook_title }}</p>
+                </div>
+                {% set favorite_recipe = result.recipe %}
+                {% set favorite_button_class = 'favorite-toggle--card' %}
+                {% include "_favorite_button.html" %}
+              </div>
+              <div class="recipe-summary-card__stats">
+                <span>fused {{ result.score }}</span>
+                <span>keyword {{ result.keyword_score }}</span>
+                <span>similarity {{ result.semantic_score }}</span>
+              </div>
+              {% if result.matched_ingredient %}
+                <div class="pill-row">
+                  <span class="pill">{{ result.matched_ingredient }}</span>
+                </div>
+              {% endif %}
+              {% if result.matched_terms %}
+                <div class="pill-row">
+                  {% for term in result.matched_terms %}
+                    <span class="pill">{{ term }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+              {% include "_recipe_card_meta.html" %}
+              {% if source_metadata.get('intro') %}
+                <p class="cookbook-card__meta recipe-summary-card__summary">{{ source_metadata.get('intro') }}</p>
+              {% elif result.recipe.source.excerpt %}
+                <p class="cookbook-card__meta recipe-summary-card__summary">{{ result.recipe.source.excerpt }}</p>
+              {% endif %}
+              <div class="card-actions">
+                <a class="button button--secondary" href="{{ recipe_page_href }}">Open Recipe</a>
+                <a class="button button--secondary" href="{{ url_for('cookbook_page', cookbook_id=result.recipe.cookbook_id) }}">Open Cookbook</a>
+              </div>
+            </article>
+          {% endfor %}
+        {% else %}
+          <article class="empty-state">
+            <h3>No matches found</h3>
+            <p>Try a broader query, a simpler ingredient, or a different cooking method.</p>
+          </article>
+        {% endif %}
+      </div>
+    </article>
+
+    <div class="panel-stack">
+      <article class="panel" data-ingredient-index-panel>
+        <div class="section-heading">
+          <div>
+            <h2>Ingredient Index</h2>
+            <p>Jump straight into ingredient-filtered searches from the indexed recipe set.</p>
+          </div>
+        </div>
+        <div class="ingredient-list ingredient-list--static">
+          {% if ingredients %}
+            {% for item in ingredients %}
+              <button class="ingredient-chip ingredient-chip--static" type="button" data-add-ingredient="{{ item.name }}">{{ item.name }} ({{ item.recipe_count }})</button>
+            {% endfor %}
+          {% else %}
+            <p class="cookbook-card__meta">No indexed ingredients yet.</p>
+          {% endif %}
+        </div>
+      </article>
+    </div>
+  </section>
+{% endblock %}

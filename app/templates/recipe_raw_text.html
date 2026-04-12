@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Raw Text · {{ recipe.title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+  <section class="page-hero">
+    <div class="page-hero__content">
+      <p class="page-kicker">Raw Text</p>
+      <h1>{{ recipe.title }}</h1>
+      <p>{{ recipe.cookbook_title }}</p>
+    </div>
+    <div class="detail-navigation">
+      <a class="button button--secondary" href="{{ url_for('recipe_page', recipe_id=recipe.id) }}">Back To Recipe</a>
+      <a class="button button--secondary" href="{{ back_href }}">{{ back_label }}</a>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h2>Source Text</h2>
+        <p>Plain extracted source text from the original cookbook file.</p>
+      </div>
+    </div>
+    {% if raw_text %}
+      <pre class="raw-text-block">{{ raw_text }}</pre>
+    {% else %}
+      <article class="empty-state">
+        <h3>No raw text available</h3>
+        <p>This recipe does not currently have recoverable source text.</p>
+      </article>
+    {% endif %}
+  </section>
+{% endblock %}

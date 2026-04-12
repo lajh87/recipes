@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}{{ collection.title }} Collection · {{ app_name }}{% endblock %}
+
+{% block content %}
+  <section class="page-hero">
+    <div class="page-hero__content">
+      <p class="page-kicker">Collection</p>
+      <h1>{{ collection.title }}</h1>
+      <p>{{ collection.description }}</p>
+      <div class="page-hero__meta">
+        <span>{{ collection.recipe_count }} recipes</span>
+      </div>
+    </div>
+    <div class="detail-navigation">
+      {% if collection.allow_upload %}
+        <form class="upload-inline" action="{{ url_for('upload_cookbooks_form') }}" method="post" enctype="multipart/form-data" data-upload-progress-form>
+          <input type="hidden" name="collection_slug" value="{{ collection.slug }}" />
+          <label class="button button--secondary upload-inline__label upload-inline__label--icon" for="collection-upload-{{ collection.slug }}" title="Stage PDFs" aria-label="Stage PDFs">
+            <span class="upload-inline__icon">+</span>
+            <span class="visually-hidden">Stage PDFs</span>
+          </label>
+          <input
+            id="collection-upload-{{ collection.slug }}"
+            class="upload-inline__input"
+            type="file"
+            name="files"
+            accept=".pdf,application/pdf"
+            multiple
+            onchange="window.submitUploadFormWithProgress ? window.submitUploadFormWithProgress(this.form) : this.form.submit()"
+            required
+          />
+          <div class="upload-inline__progress" data-upload-progress hidden aria-live="polite">
+            <div class="upload-inline__progress-bar" data-upload-progress-bar></div>
+          </div>
+          <p class="upload-inline__progress-text" data-upload-progress-text hidden></p>
+        </form>
+      {% endif %}
+      <a class="button button--secondary" href="{{ url_for('index') }}">Back To Library</a>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h2>Recipes</h2>
+        <p>{% if collection.slug == 'favourites' %}Your starred recipes appear here.{% else %}Unprocessed files link to the original PDF. Processed items expand into recipe cards.{% endif %}</p>
+      </div>
+    </div>
+    {% set staged_cookbooks = cookbooks|selectattr('recipe_count', 'equalto', 0)|list %}
+    <div
+      class="recipe-grid"
+      {% if collection.slug == 'favourites' %}
+        data-favorites-grid
+        data-empty-title="No favourites yet"
+        data-empty-body="Star recipes from a card or recipe page to build this collection."
+      {% endif %}
+    >
+      {% if staged_cookbooks or recipes %}
+        {% for item in staged_cookbooks %}
+          <article class="recipe-summary-card recipe-summary-card--no-image">
+            <div class="recipe-summary-card__header">
+              <div>
+                <h3><a class="text-link" href="{{ url_for('cookbook_file', cookbook_id=item.id) }}">{{ item.title }}</a></h3>
+                <p>{{ item.author or 'Original PDF' }}</p>
+              </div>
+            </div>
+            {% if item.cuisine %}
+              <div class="pill-row">
+                <span class="pill">{{ item.cuisine }}</span>
+              </div>
+            {% endif %}
+            <div class="card-actions">
+              <a class="button button--secondary" href="{{ url_for('cookbook_file', cookbook_id=item.id) }}">Open Original PDF</a>
+              <a class="button button--secondary" href="{{ url_for('cookbook_page', cookbook_id=item.id) }}">Open Source</a>
+            </div>
+          </article>
+        {% endfor %}
+        {% for recipe in recipes %}
+          {% set source_metadata = recipe.source.metadata or {} %}
+          {% set recipe_page_href = url_for('recipe_page', recipe_id=recipe.id) ~ '?collection=' ~ collection.slug %}
+          <article class="recipe-summary-card{% if not recipe.images %} recipe-summary-card--no-image{% endif %}">
+            {% set card_recipe = recipe %}
+            {% include "_recipe_card_image.html" %}
+            <div class="recipe-summary-card__header">
+              <div>
+                <h3><a class="text-link" href="{{ recipe_page_href }}">{{ recipe.title }}</a></h3>
+                <p>{{ recipe.cookbook_title }}</p>
+              </div>
+              {% set favorite_recipe = recipe %}
+              {% set favorite_button_class = 'favorite-toggle--card' %}
+              {% set favorite_remove_card_on_unfavorite = collection.slug == 'favourites' %}
+              {% include "_favorite_button.html" %}
+            </div>
+            <div class="recipe-summary-card__stats">
+              <span>{{ recipe.ingredients|length }} ingredients</span>
+              <span>{{ recipe.method_steps|length }} steps</span>
+              <span>{{ recipe.images|length }} images</span>
+            </div>
+            {% include "_recipe_card_meta.html" %}
+            {% if source_metadata.get('intro') %}
+              <p class="cookbook-card__meta recipe-summary-card__summary">{{ source_metadata.get('intro') }}</p>
+            {% elif recipe.source.excerpt %}
+              <p class="cookbook-card__meta recipe-summary-card__summary">{{ recipe.source.excerpt }}</p>
+            {% endif %}
+            <div class="card-actions">
+              <a class="button button--secondary" href="{{ recipe_page_href }}">Open Recipe</a>
+              {% if collection.slug != 'favourites' %}
+                <a class="button button--secondary" href="{{ url_for('cookbook_file', cookbook_id=recipe.cookbook_id) }}">Original PDF</a>
+              {% endif %}
+            </div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <article class="empty-state">
+          {% if collection.slug == 'favourites' %}
+            <h3>No favourites yet</h3>
+            <p>Star recipes from a card or recipe page to build this collection.</p>
+          {% else %}
+            <h3>No files in this collection yet</h3>
+            <p>Use the upload control above to stage PDF files into this collection.</p>
+          {% endif %}
+        </article>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

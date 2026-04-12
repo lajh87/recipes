@@ -1,0 +1,21 @@
+<form
+  class="favorite-toggle-form"
+  action="{{ url_for('toggle_recipe_favorite', recipe_id=favorite_recipe.id) }}"
+  method="post"
+  data-favorite-form
+  data-recipe-id="{{ favorite_recipe.id }}"
+  {% if favorite_remove_card_on_unfavorite|default(false) %}data-remove-card-on-unfavorite="true"{% endif %}
+>
+  <input type="hidden" name="return_to" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
+  <button
+    class="favorite-toggle {{ 'is-active' if favorite_recipe.is_favorite else '' }} {{ favorite_button_class|default('') }}"
+    type="submit"
+    data-favorite-button
+    name="is_favorite"
+    value="{{ 'false' if favorite_recipe.is_favorite else 'true' }}"
+    aria-label="{{ 'Remove from favourites' if favorite_recipe.is_favorite else 'Add to favourites' }}"
+    title="{{ 'Remove from favourites' if favorite_recipe.is_favorite else 'Add to favourites' }}"
+  >
+    <span aria-hidden="true">★</span>
+  </button>
+</form>

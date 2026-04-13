@@ -1,48 +1,94 @@
 # Heley Family Cookbook
 
-Recipe library and meal-planning application that connects to the shared MinIO, Redis, and Qdrant stores already running on the `shared-datastores` Docker network, and includes an OpenAI-backed extraction worker for recipe-only parsing.
+Heley Family Cookbook is a Dockerised FastAPI application for building a private recipe library from ebooks, clipped recipe PDFs, and family planning notes. It stages source files in MinIO, stores library state in Redis, keeps recipe vectors in Qdrant, and exposes a web UI for browsing, search, collections, and weekly meal planning.
 
-The first milestone is ebook intake:
+## What The App Does
 
-- create and own a dedicated MinIO bucket for cookbook uploads
-- expose a UI for uploading ebook files
-- keep lightweight cookbook ingest records in Redis
-- pre-create Qdrant collections for later semantic indexing
+- stages cookbook uploads and derives cover art and metadata where possible
+- extracts structured recipes, ingredient lists, method steps, images, and source evidence
+- supports two ingestion paths:
+  - queued OpenAI-backed extraction for general cookbooks and ebooks
+  - synchronous source-specific PDF extraction for `NYTimes`, `Jamie Oliver`, `BBC Good Food`, and `Waitrose Recipes`
+- groups recipes into built-in collections such as `Favourites` and `Want To Try`
+- indexes ingredients for faceted browse and recipe search
+- combines keyword ranking with optional semantic retrieval from Qdrant
+- stores and edits a Redis-backed weekly meal plan
+- includes backup and restore scripts for the app-owned MinIO, Redis, and Qdrant data
 
-## Current Scope
+## Architecture
 
-This scaffold includes:
+The repository runs three containers:
 
-- a FastAPI web app with an upload UI and cookbook shelf
-- a worker service that extracts recipes, ingredients, method steps, images, and source evidence
-- idempotent datastore bootstrap for MinIO, Redis, and Qdrant
-- Docker assets wired to the external `shared-datastores` network
-- OpenAI-backed structured recipe extraction and recipe embeddings
-- a search page with ingredient filtering plus hybrid keyword and vector retrieval
-- a weekly meal planner with day-by-day breakfast, lunch, and dinner slots
-- optional recipe links from meal-plan slots into the extracted recipe library
-- one-time seeding of the structured meal plan from the most recent sections of `data-raw/recipes.txt`
+- `app`: serves the FastAPI site and JSON API
+- `worker`: processes queued cookbook extraction jobs
+- `bootstrap`: creates the bucket, Redis metadata, and Qdrant collections
 
-## Datastore Schema
+The app expects to join an existing external Docker network, `shared-datastores` by default, and talk to:
 
-This project creates its own application schema on the shared stores:
+- MinIO for original uploads and derived images
+- Redis for cookbook records, recipe payloads, ingredient indexes, favorites, review state, and meal plans
+- Qdrant for recipe embeddings used during semantic search
+
+App-owned schema:
 
 - MinIO bucket: `recipe-library-ebooks`
-- Redis namespace: `recipes:*`
+- Redis prefix: `recipes:*`
 - Qdrant collections:
   - `recipes-cookbooks`
   - `recipes-recipe-chunks`
 
-The worker additionally uses:
+## Main User Flows
 
-- OpenAI Responses API for structured recipe extraction
-- OpenAI embeddings for recipe vectors stored in Qdrant
+### Library
 
-The bootstrap is idempotent, so it can be rerun safely.
+- `/` shows the home shelf, cookbook cards, and built-in recipe collections
+- `/library/manage` provides bulk editing for cookbook title, author, cuisine, and publication date
+- `/cookbooks/{id}` shows a cookbook, extracted recipes, and reconstructed sections or table of contents
+- `/recipes/{id}` shows the recipe detail page, source evidence, images, and collection toggles
 
-## Local Start
+### Search And Planning
 
-Prerequisite: the shared datastore stack is already up from `/Users/lukeheley/Developer/shared-datastores`.
+- `/search` supports ingredient filtering plus keyword and semantic ranking
+- `/meal-plan` stores a structured week-by-week planner in Redis and can link slots back to recipes
+- if no structured meal plan exists yet, the app can seed one from recent sections in `data-raw/recipes.txt`
+
+### Collections
+
+Built-in collections include:
+
+- `favourites`
+- `want-to-try`
+- `nytimes`
+- `jamie-oliver`
+- `bbc-goodfood`
+- `waitrose-recipes`
+
+The last four are also upload targets for source-specific PDF parsing.
+
+## Extraction Model
+
+General cookbooks are uploaded first and extracted later by the background worker. This path is intended for `.epub`, `.mobi`, `.azw3`, and general `.pdf` books.
+
+Collection-specific PDFs are handled on upload:
+
+- `nytimes`
+- `jamie-oliver`
+- `bbc-goodfood`
+- `waitrose-recipes`
+
+The generic extractor uses OpenAI for structured recipe extraction and embeddings. Semantic search also uses OpenAI embeddings when `OPENAI_API_KEY` is set. Without an API key, the app still runs, but queued extraction and semantic search degrade or become unavailable.
+
+## Requirements
+
+- Docker and Docker Compose
+- a running MinIO, Redis, and Qdrant stack reachable from the external Docker network
+- `OPENAI_API_KEY` for queued extraction and semantic search
+- optional local tools for backup scripts:
+  - `redis-cli`
+  - `mc`
+  - `gpg` if you want encrypted `.env` backups
+
+## Quick Start
 
 1. Copy the environment file.
 
@@ -50,148 +96,114 @@ Prerequisite: the shared datastore stack is already up from `/Users/lukeheley/De
 cp .env.example .env
 ```
 
-2. Create the application schema on MinIO, Redis, and Qdrant.
+2. Set `OPENAI_API_KEY` in `.env` if you want queued extraction or semantic search.
+
+3. Make sure the shared datastore stack is already running and exposes the network named by `DATASTORE_NETWORK_NAME`.
+
+4. Bootstrap the app schema.
 
 ```bash
 docker compose --profile bootstrap run --rm bootstrap
 ```
 
-3. Start the web app.
+5. Start the web app and worker.
 
 ```bash
 docker compose up --build
 ```
 
-4. Open `http://localhost:8080`.
+6. Open `http://localhost:8080`.
 
-## Current UI
+## Configuration
 
-The initial UI includes:
+The main runtime settings live in `.env.example`.
 
-- a status strip for MinIO, Redis, Qdrant, and OpenAI readiness
-- a cookbook upload form for `.pdf`, `.epub`, `.mobi`, and `.azw3` up to 500 MB per file
-- a cookbook shelf showing upload and extraction state
-- extracted recipe review panels with source traceability and image previews
-- ingredient browse chips sourced from extracted recipe records
-- a search page combining exact ingredient filtering, keyword ranking, semantic similarity, and grounded answer generation
-- a meal-plan page linked from the top navigation
-- structured weekly planning with Monday to Sunday rows and breakfast, lunch, and dinner checklists
-- optional linking from each meal slot to a recipe in the library
-- Redis-backed autosave for structured meal plans
-- fallback import from the last few week/date sections in `data-raw/recipes.txt` when no structured plan exists yet
+Important values:
 
-## OpenAI Configuration
+- `APP_PORT`
+- `MINIO_ENDPOINT`
+- `MINIO_BUCKET_NAME`
+- `REDIS_URL`
+- `REDIS_KEY_PREFIX`
+- `QDRANT_URL`
+- `QDRANT_COOKBOOK_COLLECTION`
+- `QDRANT_RECIPE_COLLECTION`
+- `OPENAI_API_KEY`
+- `OPENAI_RECIPE_MODEL`
+- `OPENAI_EMBEDDING_MODEL`
+- `OPENAI_SEARCH_MODEL`
+- `DATASTORE_NETWORK_NAME`
 
-Set `OPENAI_API_KEY` in `.env` before queueing extraction jobs.
+Default upload limits and types:
 
-Defaults:
+- max upload size: `500 MB`
+- allowed extensions: `pdf,epub,mobi,azw3`
 
-- recipe extraction model: `gpt-5.4-mini`
-- embedding model: `text-embedding-3-small`
+## JSON API
 
-## Roadmap
+The UI is backed by a small JSON API:
 
-### Phase 1: Intake
+- `GET /healthz`
+- `GET /api/health`
+- `GET /api/cookbooks`
+- `PATCH /api/cookbooks/{cookbook_id}`
+- `POST /api/cookbooks/{cookbook_id}/extract`
+- `GET /api/cookbooks/{cookbook_id}/recipes`
+- `GET /api/recipes`
+- `GET /api/recipes/{recipe_id}`
+- `PATCH /api/recipes/{recipe_id}/review`
+- `GET /api/recipes/{recipe_id}/images/{image_index}`
+- `GET /api/ingredients`
+- `GET /api/search`
+- `GET /api/meal-plan/recipe-suggestions`
 
-- upload cookbook ebooks into MinIO
-- register cookbook records and ingest state in Redis
-- show uploaded cookbooks in a shelf-based library view
-
-### Phase 2: Extraction
-
-- parse EPUB and text-based PDF cookbook structure
-- extract recipe-only records with ingredients, method steps, source evidence, and images
-- persist extracted recipe metadata in Redis
-- store recipe embeddings in Qdrant
-- extract associated recipe imagery into MinIO
-
-### Phase 3: Browse
-
-- replace filename-only cards with cookbook covers, authors, tags, and extraction progress
-- add cookbook detail pages with chapters, sections, and recipe counts
-- surface recipe images in browse and detail views
-
-### Phase 4: Semantic Search
-
-- embed cookbook sections and recipe chunks
-- add hybrid semantic search across titles, ingredients, methods, and tags
-- show grounded search results with cookbook context and recipe previews
-
-### Phase 5: Meal Planning
-
-- assemble saved recipes into weekly meal plans
-- support pantry-aware suggestions and richer planning workflows
-- add shopping list generation and planning workflows
-
-## Project Layout
+## Repository Layout
 
 ```text
 .
-├── app
-│   ├── bootstrap.py
-│   ├── config.py
+├── app/
 │   ├── main.py
-│   ├── meal_plan.py
-│   ├── models.py
 │   ├── repository.py
-│   ├── static
-│   │   ├── app.js
-│   │   └── styles.css
-│   └── templates
-│       ├── index.html
-│       └── meal_plan.html
-├── data-raw
-│   └── recipes.txt
+│   ├── extractor.py
+│   ├── worker.py
+│   ├── meal_plan.py
+│   ├── blog.py
+│   ├── templates/
+│   └── static/
+├── data-raw/
+├── scripts/
+├── tests/
 ├── docker-compose.yml
 ├── Dockerfile
-└── requirements.txt
+├── requirements.txt
+└── README.md
 ```
 
-## Notes
+## Development Notes
 
-- The app joins the existing Docker network `shared-datastores` and expects the hostnames `minio`, `redis`, and `qdrant`.
-- Redis is used for application records, extraction jobs, ingredient indexes, review state, and meal-plan storage.
-- Qdrant stores recipe-derived vectors only.
-- The extraction worker currently targets EPUB and text-based PDF. Scan-only OCR is not implemented yet.
-- If the Redis meal-plan key is empty, the app first migrates any existing `data-raw/meal-plan.json` document and otherwise seeds from the most recent few dated sections in `data-raw/recipes.txt`.
+- The container image is defined in [Dockerfile](/Users/lukeheley/Developer/recipes/Dockerfile).
+- Runtime dependencies are listed in [requirements.txt](/Users/lukeheley/Developer/recipes/requirements.txt).
+- Tests live under [tests](/Users/lukeheley/Developer/recipes/tests). The repository does not pin `pytest` in `requirements.txt`, so install it separately if you run tests outside your own dev environment.
+- Once `pytest` is available, run the suite with `python -m pytest tests`.
+- The app performs tolerant startup schema checks, so a broken datastore connection does not necessarily stop the web process from booting.
 
 ## Backup And Restore
 
 The repository includes app-scoped backup tooling for the shared datastore layout:
 
-- `scripts/backup_recipes.sh` builds and pushes a dated GHCR image tag, exports the app's MinIO bucket, exports only Redis keys under `recipes:*`, exports Qdrant snapshots for `recipes-cookbooks` and `recipes-recipe-chunks`, and prunes OneDrive backups down to four dated folders.
-- `scripts/restore_recipes.sh` restores those MinIO, Redis, and Qdrant artifacts back into the local shared datastore stack.
-- `scripts/recipes_backup.env.example` is the configuration template for both scripts.
-- `ops/launchd/com.lukeheley.recipes-backup.plist` is a macOS `launchd` job template that runs the backup every Sunday at 02:00.
+- [scripts/backup_recipes.sh](/Users/lukeheley/Developer/recipes/scripts/backup_recipes.sh) builds and optionally pushes dated GHCR image tags, exports the MinIO bucket, exports Redis keys under the configured prefix, snapshots the Qdrant collections, and prunes old backups
+- [scripts/restore_recipes.sh](/Users/lukeheley/Developer/recipes/scripts/restore_recipes.sh) restores those artifacts into the local datastore stack
+- [scripts/recipes_backup.env.example](/Users/lukeheley/Developer/recipes/scripts/recipes_backup.env.example) is the configuration template for both scripts
+- [ops/launchd/com.lukeheley.recipes-backup.plist](/Users/lukeheley/Developer/recipes/ops/launchd/com.lukeheley.recipes-backup.plist) is a macOS `launchd` template for scheduled weekly backups
 
-### Setup
-
-1. Copy the backup env template and adjust any paths or credentials.
+Basic setup:
 
 ```bash
 cp scripts/recipes_backup.env.example scripts/recipes_backup.env
-```
-
-2. Make the scripts executable.
-
-```bash
 chmod +x scripts/backup_recipes.sh scripts/restore_recipes.sh
 ```
 
-3. Log Docker into GHCR once on the host.
-
-```bash
-docker login ghcr.io
-```
-
-4. Install the MinIO client if it is not already available as `mc`.
-
-The scripts can fall back to Docker when local CLIs are missing:
-
-- if `redis-cli` is not installed, they use `docker exec` against `shared-redis`
-- if `mc` is not installed, they use a temporary `minio/mc` container and connect through `host.docker.internal`
-
-### Manual Run
+Manual backup:
 
 ```bash
 scripts/backup_recipes.sh scripts/recipes_backup.env
@@ -203,27 +215,15 @@ Restore the most recent backup:
 scripts/restore_recipes.sh scripts/recipes_backup.env
 ```
 
-Restore a specific dated backup:
+Restore a specific dated folder:
 
 ```bash
 scripts/restore_recipes.sh scripts/recipes_backup.env "$HOME/Library/CloudStorage/OneDrive-Personal/Backups/recipes/weekly/2026-04-13"
 ```
 
-### Launchd Install
+## Known Constraints
 
-Copy the plist into `~/Library/LaunchAgents`, then load it:
-
-```bash
-cp ops/launchd/com.lukeheley.recipes-backup.plist ~/Library/LaunchAgents/
-launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.lukeheley.recipes-backup.plist
-launchctl enable "gui/$(id -u)/com.lukeheley.recipes-backup"
-```
-
-If you change the plist later, unload and bootstrap it again:
-
-```bash
-launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.lukeheley.recipes-backup.plist
-launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.lukeheley.recipes-backup.plist
-```
-
-The plist uses `Weekday = 1`, which is Sunday for macOS calendar scheduling.
+- generic cookbook extraction is best for EPUBs and text-based PDFs
+- scan-only OCR is not implemented
+- semantic search returns keyword-only results when OpenAI embeddings are unavailable
+- the app is designed around a shared external datastore network rather than a fully self-contained local compose stack

@@ -14,6 +14,7 @@ venv/
 .env
 .env.*
 !.env.example
+scripts/recipes_backup.env
 
 # OS and editor files
 .DS_Store

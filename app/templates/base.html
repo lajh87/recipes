@@ -13,8 +13,6 @@
         <nav class="site-nav">
           <a href="{{ url_for('index') }}">Library</a>
           <a href="{{ url_for('meal_plan_page') }}">Meal Plan</a>
-          <a href="{{ url_for('search_page') }}">Search</a>
-          <a href="{{ url_for('blog_index_page') }}">Blog</a>
         </nav>
         <form class="site-search" action="{{ url_for('search_page') }}" method="get">
           <input class="site-search__input" type="search" name="q" placeholder="Search recipes" value="{{ search_query if search_query is defined else '' }}" />

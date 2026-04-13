@@ -154,3 +154,76 @@ Defaults:
 - Qdrant stores recipe-derived vectors only.
 - The extraction worker currently targets EPUB and text-based PDF. Scan-only OCR is not implemented yet.
 - If the Redis meal-plan key is empty, the app first migrates any existing `data-raw/meal-plan.json` document and otherwise seeds from the most recent few dated sections in `data-raw/recipes.txt`.
+
+## Backup And Restore
+
+The repository includes app-scoped backup tooling for the shared datastore layout:
+
+- `scripts/backup_recipes.sh` builds and pushes a dated GHCR image tag, exports the app's MinIO bucket, exports only Redis keys under `recipes:*`, exports Qdrant snapshots for `recipes-cookbooks` and `recipes-recipe-chunks`, and prunes OneDrive backups down to four dated folders.
+- `scripts/restore_recipes.sh` restores those MinIO, Redis, and Qdrant artifacts back into the local shared datastore stack.
+- `scripts/recipes_backup.env.example` is the configuration template for both scripts.
+- `ops/launchd/com.lukeheley.recipes-backup.plist` is a macOS `launchd` job template that runs the backup every Sunday at 02:00.
+
+### Setup
+
+1. Copy the backup env template and adjust any paths or credentials.
+
+```bash
+cp scripts/recipes_backup.env.example scripts/recipes_backup.env
+```
+
+2. Make the scripts executable.
+
+```bash
+chmod +x scripts/backup_recipes.sh scripts/restore_recipes.sh
+```
+
+3. Log Docker into GHCR once on the host.
+
+```bash
+docker login ghcr.io
+```
+
+4. Install the MinIO client if it is not already available as `mc`.
+
+The scripts can fall back to Docker when local CLIs are missing:
+
+- if `redis-cli` is not installed, they use `docker exec` against `shared-redis`
+- if `mc` is not installed, they use a temporary `minio/mc` container and connect through `host.docker.internal`
+
+### Manual Run
+
+```bash
+scripts/backup_recipes.sh scripts/recipes_backup.env
+```
+
+Restore the most recent backup:
+
+```bash
+scripts/restore_recipes.sh scripts/recipes_backup.env
+```
+
+Restore a specific dated backup:
+
+```bash
+scripts/restore_recipes.sh scripts/recipes_backup.env "$HOME/Library/CloudStorage/OneDrive-Personal/Backups/recipes/weekly/2026-04-13"
+```
+
+### Launchd Install
+
+Copy the plist into `~/Library/LaunchAgents`, then load it:
+
+```bash
+cp ops/launchd/com.lukeheley.recipes-backup.plist ~/Library/LaunchAgents/
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.lukeheley.recipes-backup.plist
+launchctl enable "gui/$(id -u)/com.lukeheley.recipes-backup"
+```
+
+If you change the plist later, unload and bootstrap it again:
+
+```bash
+launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.lukeheley.recipes-backup.plist
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.lukeheley.recipes-backup.plist
+```
+
+The plist uses `Weekday = 1`, which is Sunday for macOS calendar scheduling.

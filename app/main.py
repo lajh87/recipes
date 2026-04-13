@@ -21,7 +21,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.bbc_goodfood_pdf import extract_bbc_goodfood_pdf
-from app.blog import BLOG_POSTS, BLOG_POSTS_BY_SLUG, enrich_blog_post
 from app.config import Settings, get_settings
 from app.epub import build_epub_chapter_map, normalize_epub_path
 from app.extractor import OpenAIRecipeExtractor, RecipeDraft
@@ -701,33 +700,19 @@ async def meal_plan_page(
     return templates.TemplateResponse(request=request, name="meal_plan.html", context=context)
 
 
-@app.get("/blog", response_class=HTMLResponse)
+@app.get("/blog", response_class=RedirectResponse)
 async def blog_index_page(
     request: Request,
-    notice: str | None = Query(default=None),
-) -> HTMLResponse:
-    context = common_template_context(request, notice=notice)
-    context.update({"blog_posts": BLOG_POSTS})
-    return templates.TemplateResponse(request=request, name="blog_index.html", context=context)
+) -> RedirectResponse:
+    return RedirectResponse(url=request.url_for("index"), status_code=307)
 
 
-@app.get("/blog/{post_slug}", response_class=HTMLResponse)
+@app.get("/blog/{post_slug}", response_class=RedirectResponse)
 async def blog_post_page(
-    post_slug: str,
     request: Request,
-    notice: str | None = Query(default=None),
-) -> HTMLResponse:
-    post = BLOG_POSTS_BY_SLUG.get(post_slug)
-    if not post:
-        raise HTTPException(status_code=404, detail="Blog post not found.")
-
-    repository = get_repository(request)
-    if post.slug == "mapping-the-ingredient-network":
-        post = enrich_blog_post(post, repository.list_recipes())
-
-    context = common_template_context(request, notice=notice)
-    context.update({"post": post})
-    return templates.TemplateResponse(request=request, name="blog_post.html", context=context)
+    post_slug: str,
+) -> RedirectResponse:
+    return RedirectResponse(url=request.url_for("index"), status_code=307)
 
 
 @app.post("/meal-plan")

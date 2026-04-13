@@ -469,6 +469,33 @@ function initMealPlanAutoLink() {
     return { row, recipeIdInput, actionContent };
   }
 
+  function syncMealPlanRowCompletionState(row) {
+    if (!(row instanceof HTMLElement)) {
+      return;
+    }
+
+    const itemInput = row.querySelector("[data-meal-plan-item]");
+    const completeInput = row.querySelector('input[type="checkbox"][name$="__completed"]');
+    if (!(itemInput instanceof HTMLInputElement) || !(completeInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    row.classList.toggle("is-complete", completeInput.checked && itemInput.value.trim().length > 0);
+  }
+
+  function syncShoppingChecklistItemState(input) {
+    if (!(input instanceof HTMLInputElement) || input.type !== "checkbox") {
+      return;
+    }
+
+    const item = input.closest(".shopping-checklist__item");
+    if (!(item instanceof HTMLElement)) {
+      return;
+    }
+
+    item.classList.toggle("is-complete", input.checked);
+  }
+
   function mealPlanRecipeUrl(recipeId) {
     const trimmedRecipeId = recipeId.trim();
     if (!mealPlanRecipeUrlTemplate || !trimmedRecipeId) {
@@ -524,6 +551,7 @@ function initMealPlanAutoLink() {
     const currentValue = itemInput.value.trim();
     if (!currentValue) {
       clearMealPlanRecipeSelection(itemInput, rowElements);
+      syncMealPlanRowCompletionState(rowElements.row);
       return null;
     }
 
@@ -531,12 +559,14 @@ function initMealPlanAutoLink() {
     if (linkedOption && (currentValue === linkedOption.title || currentValue === linkedOption.label)) {
       itemInput.dataset.recipeLinked = "true";
       renderMealPlanRowAction(actionContent, linkedOption);
+      syncMealPlanRowCompletionState(rowElements.row);
       return linkedOption;
     }
 
     const exactMatch = findMealPlanRecipeOptionByLabel(currentValue, recipeOptions);
     if (exactMatch) {
       setMealPlanRecipeSelection(itemInput, rowElements, exactMatch);
+      syncMealPlanRowCompletionState(rowElements.row);
       return exactMatch;
     }
 
@@ -545,11 +575,13 @@ function initMealPlanAutoLink() {
       const exactTitleMatches = recipeOptions.filter((option) => option.normalizedTitle === normalizedValue);
       if (exactTitleMatches.length === 1) {
         setMealPlanRecipeSelection(itemInput, rowElements, exactTitleMatches[0]);
+        syncMealPlanRowCompletionState(rowElements.row);
         return exactTitleMatches[0];
       }
     }
 
     clearMealPlanRecipeSelection(itemInput, rowElements);
+    syncMealPlanRowCompletionState(rowElements.row);
     return null;
   }
 
@@ -743,6 +775,10 @@ function initMealPlanAutoLink() {
       || event.target instanceof HTMLTextAreaElement
       || event.target instanceof HTMLSelectElement
     ) {
+      if (event.target instanceof HTMLInputElement && event.target.type === "checkbox") {
+        syncMealPlanRowCompletionState(event.target.closest("[data-meal-plan-row]"));
+        syncShoppingChecklistItemState(event.target);
+      }
       queueMealPlanSave(event.target instanceof HTMLInputElement && event.target.type === "checkbox" ? 120 : 700);
     }
   });
@@ -767,6 +803,12 @@ function initMealPlanAutoLink() {
     if (input instanceof HTMLInputElement) {
       syncMealPlanItemInput(input);
     }
+  });
+  mealPlanForm.querySelectorAll("[data-meal-plan-row]").forEach((row) => {
+    syncMealPlanRowCompletionState(row);
+  });
+  mealPlanForm.querySelectorAll('.shopping-checklist__item input[type="checkbox"]').forEach((input) => {
+    syncShoppingChecklistItemState(input);
   });
 
   mealPlanForm.addEventListener("dragstart", (event) => {

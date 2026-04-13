@@ -1791,6 +1791,11 @@ input[type="search"]:focus,
   background: rgba(255, 255, 255, 0.9);
 }
 
+.shopping-checklist__item.is-complete {
+  background: linear-gradient(180deg, #f7fbf7, #edf7ef);
+  border-color: rgba(36, 97, 58, 0.16);
+}
+
 .shopping-checklist__item input {
   margin: 3px 0 0;
 }
@@ -1803,6 +1808,10 @@ input[type="search"]:focus,
 .shopping-checklist__name {
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+.shopping-checklist__item.is-complete .shopping-checklist__name {
+  color: #24613a;
 }
 
 .shopping-checklist__recipes {

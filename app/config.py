@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     def recipe_key(self, recipe_id: str) -> str:
         return f"{self.redis_key_prefix}:recipes:{recipe_id}"
 
+    def recipe_reference_key(self, recipe_id: str) -> str:
+        return f"{self.redis_key_prefix}:recipes:refs:{recipe_id}"
+
     @property
     def favorite_recipe_index_key(self) -> str:
         return f"{self.redis_key_prefix}:recipes:favorites"

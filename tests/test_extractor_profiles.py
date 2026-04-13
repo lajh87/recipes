@@ -553,6 +553,72 @@ class ExtractorProfileTests(unittest.TestCase):
         self.assertEqual(payload.prep_time, "5 minutes")
         self.assertEqual(payload.method_steps, ["Toast the bread.", "Warm the beans and spoon them over."])
 
+    def test_generic_epub_section_fields_dedupe_consecutive_duplicates(self) -> None:
+        section = CandidateSection(
+            source_format="epub",
+            section_key="chapter.xhtml#1",
+            chapter_title="Green Bagna Cauda",
+            anchor="chapter.xhtml#1",
+            text="\n".join(
+                [
+                    "Green Bagna Cauda",
+                    "Intro text.",
+                    "Intro text.",
+                    "Serves 4",
+                    "1 cup olive oil",
+                    "1 cup olive oil",
+                    "Kosher salt",
+                    "Kosher salt",
+                    "Method",
+                    "Stir everything together.",
+                    "Stir everything together.",
+                ]
+            ),
+            excerpt="Green Bagna Cauda",
+        )
+
+        self.extractor._populate_generic_epub_section_fields(section)
+
+        self.assertEqual(section.metadata["intro"], "Intro text.")
+        self.assertEqual(section.metadata["serves"], "4")
+        self.assertEqual(section.ingredient_lines, ["1 cup olive oil", "Kosher salt"])
+        self.assertEqual(section.method_lines, ["Stir everything together."])
+
+    def test_profile_sections_dedupe_consecutive_duplicates(self) -> None:
+        soup = BeautifulSoup(
+            """
+            <html><body>
+              <p class="rec_head" id="r1">Tomato Salad</p>
+              <p class="rec_intro">Bright and punchy.</p>
+              <p class="rec_intro">Bright and punchy.</p>
+              <p class="ingred">2 tomatoes</p>
+              <p class="ingred">2 tomatoes</p>
+              <p class="method">Slice and serve.</p>
+              <p class="method">Slice and serve.</p>
+            </body></html>
+            """,
+            "html.parser",
+        )
+
+        profile = self.extractor._match_epub_recipe_paragraph_profile(soup)
+        self.assertIsNotNone(profile)
+        sections = self.extractor._extract_epub_recipe_paragraph_sections(
+            book=None,
+            href_to_item={},
+            document_item=FakeDocumentItem("chapter.xhtml"),
+            soup=soup,
+            profile=profile,
+        )
+
+        self.assertEqual(len(sections), 1)
+        self.assertEqual(sections[0].metadata["intro"], "Bright and punchy.")
+        self.assertEqual(sections[0].ingredient_lines, ["2 tomatoes"])
+        self.assertEqual(sections[0].method_lines, ["Slice and serve."])
+        self.assertEqual(
+            sections[0].text.splitlines(),
+            ["Tomato Salad", "Bright and punchy.", "2 tomatoes", "Slice and serve."],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

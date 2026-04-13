@@ -7,6 +7,8 @@ from typing import Any
 
 import fitz
 
+from app.ingredients import build_ingredient_payload, normalize_ingredient_text
+
 from app.extractor import RecipeDraft
 
 STEP_RE = re.compile(r"^Step\s+(?P<number>\d+)$", re.IGNORECASE)
@@ -300,19 +302,19 @@ def _extract_method_steps(blocks: list[PdfBlock]) -> list[str]:
 
 
 def _ingredient_record(raw: str) -> dict[str, str | bool | None]:
-    return {
-        "raw": raw,
-        "normalized_name": _normalize_ingredient_name(raw) or raw.lower(),
-        "quantity": None,
-        "unit": None,
-        "item": None,
-        "preparation": None,
-        "optional": False,
-    }
+    return build_ingredient_payload(
+        raw=raw,
+        normalized_name=_normalize_ingredient_name(raw) or raw,
+        quantity=None,
+        unit=None,
+        item=None,
+        preparation=None,
+        optional=False,
+    )
 
 
 def _normalize_ingredient_name(raw: str) -> str:
-    value = raw.replace("\xa0", " ").strip().lower()
+    value = raw.replace("\xa0", " ").strip()
     value = re.sub(
         r"^\s*(?:\d+(?:\s*/\s*\d+)?|[¼½¾⅓⅔⅛]|pinch|few|small|medium|large)\s*",
         "",
@@ -324,7 +326,7 @@ def _normalize_ingredient_name(raw: str) -> str:
         value,
     )
     value = value.split(",", 1)[0].strip()
-    value = re.sub(r"\s+", " ", value)
+    value = normalize_ingredient_text(value)
     return value
 
 

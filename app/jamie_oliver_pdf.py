@@ -7,6 +7,8 @@ from typing import Any
 
 import fitz
 
+from app.ingredients import build_ingredient_payload, normalize_ingredient_text
+
 from app.extractor import RecipeDraft
 
 INGREDIENT_START_RE = re.compile(
@@ -339,15 +341,15 @@ def _collapse_preparation_notes(lines: list[str]) -> list[str]:
 
 def _ingredient_record(raw: str) -> dict[str, str | bool | None]:
     lowered = raw.lower()
-    return {
-        "raw": raw,
-        "normalized_name": _normalize_ingredient_name(raw) or lowered,
-        "quantity": None,
-        "unit": None,
-        "item": None,
-        "preparation": None,
-        "optional": lowered.startswith("optional:"),
-    }
+    return build_ingredient_payload(
+        raw=raw,
+        normalized_name=_normalize_ingredient_name(raw) or lowered,
+        quantity=None,
+        unit=None,
+        item=None,
+        preparation=None,
+        optional=lowered.startswith("optional:"),
+    )
 
 
 def _normalize_ingredient_name(raw: str) -> str:
@@ -366,8 +368,8 @@ def _normalize_ingredient_name(raw: str) -> str:
         value,
         flags=re.IGNORECASE,
     )
-    value = value.split(",", 1)[0].strip().lower()
-    value = re.sub(r"\s+", " ", value)
+    value = value.split(",", 1)[0].strip()
+    value = normalize_ingredient_text(value)
     return value
 
 

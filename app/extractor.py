@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.config import Settings
 from app.epub import extract_epub_table_of_contents, normalize_epub_path
+from app.ingredients import build_ingredient_payload, normalize_ingredient_text, prepare_ingredient_mapping
 from app.models import CookbookTocEntry
 
 logger = logging.getLogger(__name__)
@@ -329,7 +330,9 @@ class RecipeDraft:
 
     def embedding_text(self) -> str:
         ingredient_names = ", ".join(
-            ingredient.get("normalized_name") or ingredient.get("raw", "")
+            ingredient.get("canonical_name")
+            or ingredient.get("normalized_name")
+            or ingredient.get("raw", "")
             for ingredient in self.ingredients
         )
         method = " ".join(self.method_steps)
@@ -391,7 +394,7 @@ class OpenAIRecipeExtractor:
                 RecipeDraft(
                     title=payload.title.strip() or (section.chapter_title or "Untitled Recipe"),
                     ingredients=[
-                        ingredient.model_dump()
+                        prepare_ingredient_mapping(ingredient.model_dump())
                         for ingredient in payload.ingredients
                         if ingredient.raw.strip()
                     ],
@@ -561,14 +564,16 @@ class OpenAIRecipeExtractor:
         item = re.sub(r"^(?:of\s+)", "", item, flags=re.IGNORECASE)
 
         normalized_name = self._normalize_ingredient_name(item or cleaned)
-        return ExtractedIngredient(
-            raw=cleaned,
-            normalized_name=normalized_name,
-            quantity=quantity,
-            unit=unit,
-            item=item or None,
-            preparation=preparation,
-            optional="optional" in lowered,
+        return ExtractedIngredient.model_validate(
+            build_ingredient_payload(
+                raw=cleaned,
+                normalized_name=normalized_name,
+                quantity=quantity,
+                unit=unit,
+                item=item or None,
+                preparation=preparation,
+                optional="optional" in lowered,
+            )
         )
 
     def _normalize_ingredient_name(self, value: str) -> str:
@@ -576,8 +581,7 @@ class OpenAIRecipeExtractor:
         normalized = re.sub(r"\s*\([^)]*\)", " ", normalized)
         normalized = re.sub(r"\b(?:for|plus)\b.*$", "", normalized).strip()
         normalized = re.sub(r"^(?:a|an|the)\s+", "", normalized)
-        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-        normalized = re.sub(r"\s+", " ", normalized).strip()
+        normalized = normalize_ingredient_text(normalized)
         return normalized or "ingredient"
 
     def _merge_source_metadata(
@@ -813,9 +817,13 @@ class OpenAIRecipeExtractor:
         return [section for section in sections if section.text.strip()]
 
     def _populate_generic_epub_section_fields(self, section: CandidateSection) -> None:
-        lines = [line.strip() for line in section.text.splitlines() if line.strip()]
+        lines = self._dedupe_consecutive_lines(
+            [line.strip() for line in section.text.splitlines() if line.strip()]
+        )
         if not lines:
             return
+        section.text = "\n".join(lines).strip()
+        section.excerpt = self._excerpt(lines)
 
         title = (section.chapter_title or "").strip()
         content_lines = list(lines)
@@ -879,11 +887,13 @@ class OpenAIRecipeExtractor:
             raw_method_lines.append(line)
 
         if intro_lines:
-            metadata["intro"] = intro_lines
+            metadata["intro"] = self._dedupe_consecutive_lines(intro_lines)
 
         section.metadata = self._finalize_section_metadata(metadata)
-        section.ingredient_lines = ingredient_lines
-        section.method_lines = self._collapse_generic_method_lines(raw_method_lines)
+        section.ingredient_lines = self._dedupe_consecutive_lines(ingredient_lines)
+        section.method_lines = self._collapse_generic_method_lines(
+            self._dedupe_consecutive_lines(raw_method_lines)
+        )
 
     def _looks_like_generic_ingredient_line(self, line: str) -> bool:
         normalized = " ".join(line.split()).strip()
@@ -944,6 +954,21 @@ class OpenAIRecipeExtractor:
             steps.append(current)
         return steps
 
+    def _dedupe_consecutive_lines(self, lines: list[str]) -> list[str]:
+        deduped: list[str] = []
+        previous_normalized: str | None = None
+
+        for line in lines:
+            normalized = " ".join(str(line).split()).strip()
+            if not normalized:
+                continue
+            if normalized.casefold() == previous_normalized:
+                continue
+            deduped.append(normalized)
+            previous_normalized = normalized.casefold()
+
+        return deduped
+
     def _match_epub_recipe_paragraph_profile(
         self, soup: BeautifulSoup
     ) -> EpubRecipeParagraphProfile | None:
@@ -996,6 +1021,7 @@ class OpenAIRecipeExtractor:
             nonlocal counter, current_lines, current_images, current_title, current_anchor, current_metadata, current_supplemental_heading, current_ingredient_lines, current_method_lines
             if not current_title or not current_lines:
                 return
+            deduped_lines = self._dedupe_consecutive_lines(current_lines)
             counter += 1
             sections.append(
                 CandidateSection(
@@ -1003,12 +1029,12 @@ class OpenAIRecipeExtractor:
                     section_key=f"{section_key}#{counter}",
                     chapter_title=current_title,
                     anchor=f"{section_key}#{current_anchor or counter}",
-                    text="\n".join(current_lines).strip(),
-                    excerpt=self._excerpt(current_lines),
+                    text="\n".join(deduped_lines).strip(),
+                    excerpt=self._excerpt(deduped_lines),
                     images=list(current_images),
                     metadata=self._finalize_section_metadata(current_metadata),
-                    ingredient_lines=list(current_ingredient_lines),
-                    method_lines=list(current_method_lines),
+                    ingredient_lines=self._dedupe_consecutive_lines(current_ingredient_lines),
+                    method_lines=self._dedupe_consecutive_lines(current_method_lines),
                 )
             )
             current_title = None
@@ -1188,7 +1214,9 @@ class OpenAIRecipeExtractor:
         finalized: dict[str, Any] = {}
         for key, value in metadata.items():
             if key == "intro":
-                paragraphs = [paragraph.strip() for paragraph in value if paragraph.strip()]
+                paragraphs = self._dedupe_consecutive_lines(
+                    [paragraph.strip() for paragraph in value if paragraph.strip()]
+                )
                 if paragraphs:
                     finalized[key] = "\n\n".join(paragraphs)
                 continue
@@ -1198,11 +1226,13 @@ class OpenAIRecipeExtractor:
                     if not isinstance(section, dict):
                         continue
                     heading = str(section.get("heading", "")).strip()
-                    lines = [
-                        str(line).strip()
-                        for line in section.get("lines", [])
-                        if str(line).strip()
-                    ]
+                    lines = self._dedupe_consecutive_lines(
+                        [
+                            str(line).strip()
+                            for line in section.get("lines", [])
+                            if str(line).strip()
+                        ]
+                    )
                     if heading and lines:
                         sections.append({"heading": heading, "lines": lines})
                 if sections:

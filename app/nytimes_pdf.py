@@ -8,6 +8,8 @@ from typing import Any
 
 import fitz
 
+from app.ingredients import build_ingredient_payload, normalize_ingredient_text
+
 from app.extractor import CandidateImage, RecipeDraft
 
 INGREDIENT_STRIP_RE = re.compile(
@@ -412,15 +414,15 @@ def _extract_images(document: fitz.Document, pages: list[fitz.Page]) -> list[Can
 
 def _ingredient_record(raw: str) -> dict[str, str | bool | None]:
     normalized_name = _normalize_ingredient_name(raw)
-    return {
-        "raw": raw,
-        "normalized_name": normalized_name or raw.lower(),
-        "quantity": None,
-        "unit": None,
-        "item": None,
-        "preparation": None,
-        "optional": False,
-    }
+    return build_ingredient_payload(
+        raw=raw,
+        normalized_name=normalized_name or raw,
+        quantity=None,
+        unit=None,
+        item=None,
+        preparation=None,
+        optional=False,
+    )
 
 
 def _normalize_ingredient_name(raw: str) -> str:
@@ -429,8 +431,8 @@ def _normalize_ingredient_name(raw: str) -> str:
     value = INGREDIENT_STRIP_RE.sub("", value)
     value = LEADING_UNIT_RE.sub("", value)
     value = re.sub(r"^(?:of\s+)", "", value, flags=re.IGNORECASE)
-    value = value.split(",", 1)[0].strip().lower()
-    value = re.sub(r"\s+", " ", value)
+    value = value.split(",", 1)[0].strip()
+    value = normalize_ingredient_text(value)
     return value
 
 

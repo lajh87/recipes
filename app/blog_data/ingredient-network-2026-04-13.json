@@ -1,0 +1,244 @@
+{
+  "generated_at": "2026-04-13T08:03:30.120904+00:00",
+  "recipe_count": 2485,
+  "min_occurrence": 3,
+  "node_count": 1212,
+  "edge_count": 62765,
+  "density": 0.08552651301463755,
+  "average_degree": 103.57260726072607,
+  "component_count": 1,
+  "giant_component_node_count": 1212,
+  "giant_component_share": 1.0,
+  "average_shortest_path": 1.9238553087348371,
+  "diameter": 3,
+  "top_degree_centrality": [
+    {
+      "ingredient": "salt",
+      "value": 0.8654004954582989
+    },
+    {
+      "ingredient": "olive oil",
+      "value": 0.8373245251857968
+    },
+    {
+      "ingredient": "garlic",
+      "value": 0.6837324525185797
+    },
+    {
+      "ingredient": "onion",
+      "value": 0.6812551610239471
+    },
+    {
+      "ingredient": "lemon juice",
+      "value": 0.6449215524360034
+    },
+    {
+      "ingredient": "unsalted butter",
+      "value": 0.6350123864574732
+    },
+    {
+      "ingredient": "caster sugar",
+      "value": 0.6275805119735756
+    },
+    {
+      "ingredient": "butter",
+      "value": 0.5838150289017341
+    }
+  ],
+  "top_weighted_degree": [
+    {
+      "ingredient": "olive oil",
+      "value": 11337
+    },
+    {
+      "ingredient": "salt",
+      "value": 9927
+    },
+    {
+      "ingredient": "garlic",
+      "value": 8330
+    },
+    {
+      "ingredient": "onion",
+      "value": 5650
+    },
+    {
+      "ingredient": "caster sugar",
+      "value": 4767
+    },
+    {
+      "ingredient": "butter",
+      "value": 4681
+    },
+    {
+      "ingredient": "lemon juice",
+      "value": 4482
+    },
+    {
+      "ingredient": "salt and black pepper",
+      "value": 3939
+    }
+  ],
+  "top_closeness_centrality": [
+    {
+      "ingredient": "salt",
+      "value": 0.88136826783115
+    },
+    {
+      "ingredient": "olive oil",
+      "value": 0.8600852272727273
+    },
+    {
+      "ingredient": "garlic",
+      "value": 0.759723964868256
+    },
+    {
+      "ingredient": "onion",
+      "value": 0.7582968065122104
+    },
+    {
+      "ingredient": "lemon juice",
+      "value": 0.7379646556977453
+    },
+    {
+      "ingredient": "unsalted butter",
+      "value": 0.7326073805202662
+    },
+    {
+      "ingredient": "caster sugar",
+      "value": 0.7286401925391095
+    },
+    {
+      "ingredient": "butter",
+      "value": 0.7061224489795919
+    }
+  ],
+  "top_weighted_closeness_centrality": [
+    {
+      "ingredient": "olive oil",
+      "value": 4.036138354950644
+    },
+    {
+      "ingredient": "salt",
+      "value": 4.031833775255171
+    },
+    {
+      "ingredient": "garlic",
+      "value": 4.020278870837699
+    },
+    {
+      "ingredient": "onion",
+      "value": 3.986474764700046
+    },
+    {
+      "ingredient": "salt and black pepper",
+      "value": 3.980248076152119
+    },
+    {
+      "ingredient": "black pepper",
+      "value": 3.9717685951375326
+    },
+    {
+      "ingredient": "lemon juice",
+      "value": 3.9663591775155136
+    },
+    {
+      "ingredient": "caster sugar",
+      "value": 3.957843779369068
+    }
+  ],
+  "top_frequency": [
+    {
+      "ingredient": "olive oil",
+      "value": 1084
+    },
+    {
+      "ingredient": "salt",
+      "value": 899
+    },
+    {
+      "ingredient": "garlic",
+      "value": 712
+    },
+    {
+      "ingredient": "onion",
+      "value": 428
+    },
+    {
+      "ingredient": "caster sugar",
+      "value": 419
+    },
+    {
+      "ingredient": "butter",
+      "value": 409
+    },
+    {
+      "ingredient": "lemon juice",
+      "value": 380
+    },
+    {
+      "ingredient": "salt and black pepper",
+      "value": 363
+    },
+    {
+      "ingredient": "black pepper",
+      "value": 340
+    },
+    {
+      "ingredient": "unsalted butter",
+      "value": 322
+    }
+  ],
+  "top_cooccurrence_edges": [
+    {
+      "source": "garlic",
+      "target": "olive oil",
+      "value": 451
+    },
+    {
+      "source": "olive oil",
+      "target": "salt",
+      "value": 380
+    },
+    {
+      "source": "garlic",
+      "target": "salt",
+      "value": 325
+    },
+    {
+      "source": "olive oil",
+      "target": "salt and black pepper",
+      "value": 256
+    },
+    {
+      "source": "olive oil",
+      "target": "onion",
+      "value": 232
+    },
+    {
+      "source": "black pepper",
+      "target": "olive oil",
+      "value": 225
+    },
+    {
+      "source": "garlic",
+      "target": "onion",
+      "value": 221
+    },
+    {
+      "source": "lemon juice",
+      "target": "olive oil",
+      "value": 202
+    },
+    {
+      "source": "onion",
+      "target": "salt",
+      "value": 198
+    },
+    {
+      "source": "olive oil",
+      "target": "parsley",
+      "value": 196
+    }
+  ]
+}

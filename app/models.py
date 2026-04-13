@@ -48,6 +48,7 @@ class DatastoreStatus(BaseModel):
 class IngredientRecord(BaseModel):
     raw: str
     normalized_name: str
+    canonical_name: str | None = None
     quantity: str | None = None
     unit: str | None = None
     item: str | None = None

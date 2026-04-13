@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Blog · {{ app_name }}{% endblock %}
+
+{% block content %}
+  <section class="page-hero blog-hero">
+    <div class="page-hero__content">
+      <p class="page-kicker">Blog</p>
+      <h1>Notes on planning dinner, cooking more deliberately, and making the library useful.</h1>
+      <p>Short posts about how the cookbook is evolving and why the workflow matters at home.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="blog-list">
+      {% for post in blog_posts %}
+        <article class="blog-card">
+          <a class="blog-card__image" href="{{ url_for('blog_post_page', post_slug=post.slug) }}">
+            <img src="{{ url_for('static', path=post.image_path) }}" alt="{{ post.image_alt }}" loading="lazy" />
+          </a>
+          <div class="blog-card__body">
+            <div class="blog-card__meta">
+              <time datetime="{{ post.published_at }}">{{ post.published_label }}</time>
+              <span>{{ post.author }}</span>
+            </div>
+            <div>
+              <h2><a class="text-link" href="{{ url_for('blog_post_page', post_slug=post.slug) }}">{{ post.title }}</a></h2>
+              <p>{{ post.excerpt }}</p>
+            </div>
+            <div class="card-actions">
+              <a class="button button--secondary" href="{{ url_for('blog_post_page', post_slug=post.slug) }}">Read Post</a>
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

@@ -21,10 +21,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.bbc_goodfood_pdf import extract_bbc_goodfood_pdf
+from app.blog import BLOG_POSTS, BLOG_POSTS_BY_SLUG
 from app.config import Settings, get_settings
 from app.epub import build_epub_chapter_map, normalize_epub_path
 from app.extractor import OpenAIRecipeExtractor, RecipeDraft
 from app.jamie_oliver_pdf import extract_jamie_oliver_pdf
+from app.ingredients import canonicalize_ingredient_name
 from app.meal_plan import (
     MealPlanDocument,
     DEFAULT_IMPORT_WEEK_LIMIT,
@@ -388,7 +390,7 @@ def normalize_search_ingredients(values: list[str] | None) -> list[str]:
     seen: set[str] = set()
     for value in values:
         for part in (value or "").split(","):
-            cleaned = " ".join(part.strip().lower().split())
+            cleaned = canonicalize_ingredient_name(part.strip())
             if cleaned and cleaned not in seen:
                 seen.add(cleaned)
                 normalized.append(cleaned)
@@ -688,6 +690,31 @@ async def meal_plan_page(
         }
     )
     return templates.TemplateResponse(request=request, name="meal_plan.html", context=context)
+
+
+@app.get("/blog", response_class=HTMLResponse)
+async def blog_index_page(
+    request: Request,
+    notice: str | None = Query(default=None),
+) -> HTMLResponse:
+    context = common_template_context(request, notice=notice)
+    context.update({"blog_posts": BLOG_POSTS})
+    return templates.TemplateResponse(request=request, name="blog_index.html", context=context)
+
+
+@app.get("/blog/{post_slug}", response_class=HTMLResponse)
+async def blog_post_page(
+    post_slug: str,
+    request: Request,
+    notice: str | None = Query(default=None),
+) -> HTMLResponse:
+    post = BLOG_POSTS_BY_SLUG.get(post_slug)
+    if not post:
+        raise HTTPException(status_code=404, detail="Blog post not found.")
+
+    context = common_template_context(request, notice=notice)
+    context.update({"post": post})
+    return templates.TemplateResponse(request=request, name="blog_post.html", context=context)
 
 
 @app.post("/meal-plan")

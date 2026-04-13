@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}{{ post.title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+  <article class="blog-post">
+    <section class="page-hero blog-post__hero">
+      <div class="page-hero__content">
+        <p class="page-kicker">Blog</p>
+        <h1>{{ post.title }}</h1>
+        <div class="page-hero__meta">
+          <span><time datetime="{{ post.published_at }}">{{ post.published_label }}</time></span>
+          <span>{{ post.author }}</span>
+        </div>
+      </div>
+      <div class="detail-navigation">
+        <a class="button button--secondary" href="{{ url_for('blog_index_page') }}">Back To Blog</a>
+      </div>
+    </section>
+
+    <section class="panel blog-post__panel">
+      <figure class="blog-post__figure">
+        <img src="{{ url_for('static', path=post.image_path) }}" alt="{{ post.image_alt }}" />
+        {% if post.figure_caption %}
+          <figcaption class="blog-post__caption">{{ post.figure_caption }}</figcaption>
+        {% endif %}
+      </figure>
+      {% if post.key_stats %}
+        <div class="blog-stat-grid">
+          {% for label, value in post.key_stats %}
+            <article class="blog-stat-card">
+              <span>{{ label }}</span>
+              <strong>{{ value }}</strong>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+      <div class="blog-post__body">
+        {% for paragraph in post.paragraphs %}
+          <p>{{ paragraph }}</p>
+        {% endfor %}
+      </div>
+      {% if post.sections %}
+        <div class="blog-post__sections">
+          {% for section in post.sections %}
+            <section class="blog-post__section">
+              <h2>{{ section.title }}</h2>
+              <ul>
+                {% for item in section.items %}
+                  <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </section>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+  </article>
+{% endblock %}

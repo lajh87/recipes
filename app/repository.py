@@ -23,11 +23,13 @@ from redis import Redis
 
 from app.config import Settings
 from app.extractor import RecipeDraft
+from app.ingredients import canonicalize_ingredient_name, ingredient_index_name, prepare_ingredient_mapping
 from app.models import (
     CookbookItem,
     CookbookTocEntry,
     DatastoreStatus,
     IngredientIndexItem,
+    IngredientRecord,
     RecipeCollectionItem,
     RecipeExtractionRecord,
     RecipeImageRecord,
@@ -480,6 +482,71 @@ class LibraryRepository:
             table_of_contents=table_of_contents,
         )
 
+    def backfill_canonical_ingredients(self) -> dict[str, int]:
+        recipe_ids = self._all_recipe_ids()
+        recipes = self._get_recipes_by_ids(recipe_ids)
+
+        updated_recipes = 0
+        updated_ingredients = 0
+        for recipe in recipes:
+            prepared_ingredients = [prepare_ingredient_mapping(ingredient.model_dump()) for ingredient in recipe.ingredients]
+            canonical_names = sorted(
+                {
+                    ingredient_index_name(ingredient)
+                    for ingredient in prepared_ingredients
+                    if ingredient_index_name(ingredient)
+                }
+            )
+
+            ingredient_changed = any(
+                ingredient.canonical_name != prepared.get("canonical_name")
+                or ingredient.normalized_name != prepared.get("normalized_name")
+                for ingredient, prepared in zip(recipe.ingredients, prepared_ingredients, strict=False)
+            )
+            ingredient_count_delta = sum(
+                1
+                for ingredient, prepared in zip(recipe.ingredients, prepared_ingredients, strict=False)
+                if ingredient.canonical_name != prepared.get("canonical_name")
+                or ingredient.normalized_name != prepared.get("normalized_name")
+            )
+            if len(prepared_ingredients) != len(recipe.ingredients):
+                ingredient_changed = True
+                ingredient_count_delta = max(ingredient_count_delta, len(prepared_ingredients))
+
+            if ingredient_changed or recipe.ingredient_names != canonical_names:
+                updated_recipe = recipe.model_copy(
+                    update={
+                        "ingredients": [
+                            IngredientRecord.model_validate(item)
+                            for item in prepared_ingredients
+                        ],
+                        "ingredient_names": canonical_names,
+                    }
+                )
+                self.redis.set(self.settings.recipe_key(recipe.id), updated_recipe.model_dump_json())
+                self.redis.set(
+                    self.settings.recipe_reference_key(recipe.id),
+                    self._build_recipe_reference(updated_recipe).model_dump_json(),
+                )
+                updated_recipes += 1
+                updated_ingredients += ingredient_count_delta
+
+        self._rebuild_ingredient_index()
+
+        self.redis.set(self.settings.schema_version_key, SCHEMA_VERSION)
+        self.redis.hset(
+            self.settings.schema_metadata_key,
+            mapping={
+                "version": SCHEMA_VERSION,
+                "ingredient_backfill_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        return {
+            "recipes_scanned": len(recipes),
+            "recipes_updated": updated_recipes,
+            "ingredients_updated": updated_ingredients,
+        }
+
     def append_extracted_recipes(
         self,
         cookbook_id: str,
@@ -520,6 +587,24 @@ class LibraryRepository:
         )
         return len(filtered_drafts)
 
+    def _all_recipe_ids(self) -> list[str]:
+        recipe_ids: list[str] = []
+        cookbook_ids = self.redis.zrevrange(self.settings.cookbook_index_key, 0, -1)
+        for cookbook_id in cookbook_ids:
+            recipe_ids.extend(
+                self.redis.zrange(self.settings.cookbook_recipe_index_key(cookbook_id), 0, -1)
+            )
+        return recipe_ids
+
+    def _rebuild_ingredient_index(self) -> None:
+        ingredient_keys = list(self.redis.scan_iter(match=f"{self.settings.ingredient_index_prefix}*"))
+        if ingredient_keys:
+            self.redis.delete(*ingredient_keys)
+
+        for recipe in self.list_recipes():
+            for ingredient_name in recipe.ingredient_names:
+                self.redis.sadd(self.settings.ingredient_key(ingredient_name), recipe.id)
+
     def _persist_extracted_recipes(
         self,
         cookbook: CookbookItem,
@@ -543,9 +628,9 @@ class LibraryRepository:
                 ingredients=draft.ingredients,
                 ingredient_names=sorted(
                     {
-                        ingredient.get("normalized_name", "").strip()
+                        ingredient_index_name(ingredient)
                         for ingredient in draft.ingredients
-                        if ingredient.get("normalized_name", "").strip()
+                        if ingredient_index_name(ingredient)
                     }
                 ),
                 method_steps=draft.method_steps,
@@ -1450,8 +1535,7 @@ class LibraryRepository:
         return (1 if normalized else 0, normalized)
 
     def _normalize_ingredient(self, value: str) -> str:
-        cleaned = re.sub(r"[^a-z0-9\s-]", "", value.lower())
-        return re.sub(r"\s+", " ", cleaned).strip()
+        return canonicalize_ingredient_name(value)
 
     def _get_recipes_by_ids(self, recipe_ids: list[str]) -> list[RecipeRecord]:
         if not recipe_ids:
@@ -1514,10 +1598,27 @@ class LibraryRepository:
     ) -> RecipeRecord:
         recipe = RecipeRecord.model_validate_json(payload)
         cleaned_cookbook_title = self._clean_metadata_text(recipe.cookbook_title)
+        canonical_ingredient_names = sorted(
+            {
+                ingredient_index_name(ingredient)
+                for ingredient in recipe.ingredients
+                if ingredient_index_name(ingredient)
+            }
+        )
         if cleaned_cookbook_title and cleaned_cookbook_title != recipe.cookbook_title:
             recipe = recipe.model_copy(update={"cookbook_title": cleaned_cookbook_title})
-        if recipe.id != recipe_id or recipe.is_favorite != is_favorite:
-            recipe = recipe.model_copy(update={"id": recipe_id, "is_favorite": is_favorite})
+        if (
+            recipe.id != recipe_id
+            or recipe.is_favorite != is_favorite
+            or recipe.ingredient_names != canonical_ingredient_names
+        ):
+            recipe = recipe.model_copy(
+                update={
+                    "id": recipe_id,
+                    "is_favorite": is_favorite,
+                    "ingredient_names": canonical_ingredient_names,
+                }
+            )
         return recipe
 
     def _build_recipe_reference(self, recipe: RecipeRecord) -> RecipeReferenceRecord:

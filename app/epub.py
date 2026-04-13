@@ -186,63 +186,76 @@ def build_chapter_map_from_toc_entries(
 
     spine_index = {path: index for index, path in enumerate(spine_paths)}
     flattened = _flatten_toc_entries(entries)
-    markers: list[tuple[int, int, str]] = []
-
-    for index, (entry, depth) in enumerate(flattened):
-        if _is_ignored_chapter_label(entry.label):
-            continue
-        start_index = spine_index.get(entry.href)
-        if start_index is None:
-            continue
-        path_is_relevant = entry.href in (recipe_paths or set(spine_paths))
-
-        next_sibling_index: int | None = None
-        for later_entry, later_depth in flattened[index + 1 :]:
-            later_index = spine_index.get(later_entry.href)
-            if later_index is None or later_depth > depth:
-                continue
-            next_sibling_index = later_index
-            break
-
-        span = (next_sibling_index or len(spine_paths)) - start_index
-        if not entry.children:
-            if depth > 0 and not _looks_like_chapter_label(entry.label):
-                continue
-            if depth == 0 and span <= 1 and not _looks_like_chapter_label(entry.label) and not path_is_relevant:
-                continue
-
-        markers.append((start_index, depth, entry.label))
-
-    if not markers:
-        return {}
-
-    mapping: dict[str, str] = {}
     relevant_paths = recipe_paths or set(spine_paths)
-    markers.sort(key=lambda item: (item[0], item[1]))
-    collapsed_markers: list[tuple[int, int, str]] = []
 
-    for start_index, depth, label in markers:
-        if collapsed_markers and collapsed_markers[-1][0] == start_index:
-            previous_start, previous_depth, previous_label = collapsed_markers[-1]
-            if depth < previous_depth:
-                collapsed_markers[-1] = (start_index, depth, label)
-            else:
-                collapsed_markers[-1] = (previous_start, previous_depth, previous_label)
-            continue
-        collapsed_markers.append((start_index, depth, label))
+    def build_mapping(*, ignore_recipe_leaf_entries: bool) -> dict[str, str]:
+        markers: list[tuple[int, int, str]] = []
 
-    for position, (start_index, _depth, label) in enumerate(collapsed_markers):
-        next_index = len(spine_paths)
-        for later_start, _later_depth, _later_label in collapsed_markers[position + 1 :]:
-            if later_start > start_index:
-                next_index = later_start
+        for index, (entry, depth) in enumerate(flattened):
+            if _is_ignored_chapter_label(entry.label):
+                continue
+            start_index = spine_index.get(entry.href)
+            if start_index is None:
+                continue
+            path_is_relevant = entry.href in relevant_paths
+
+            next_sibling_index: int | None = None
+            for later_entry, later_depth in flattened[index + 1 :]:
+                later_index = spine_index.get(later_entry.href)
+                if later_index is None or later_depth > depth:
+                    continue
+                next_sibling_index = later_index
                 break
 
-        for path in spine_paths[start_index:next_index]:
-            if path in relevant_paths:
-                mapping[path] = label
+            span = (next_sibling_index or len(spine_paths)) - start_index
+            if not entry.children:
+                if ignore_recipe_leaf_entries and path_is_relevant:
+                    continue
+                if depth > 0 and not _looks_like_chapter_label(entry.label):
+                    continue
+                if depth == 0 and span <= 1 and not _looks_like_chapter_label(entry.label) and not path_is_relevant:
+                    continue
 
-    return mapping
+            markers.append((start_index, depth, entry.label))
+
+        if not markers:
+            return {}
+
+        markers.sort(key=lambda item: (item[0], item[1]))
+        collapsed_markers: list[tuple[int, int, str]] = []
+
+        for start_index, depth, label in markers:
+            if collapsed_markers and collapsed_markers[-1][0] == start_index:
+                previous_start, previous_depth, previous_label = collapsed_markers[-1]
+                if ignore_recipe_leaf_entries and depth > previous_depth:
+                    collapsed_markers[-1] = (start_index, depth, label)
+                elif depth < previous_depth:
+                    collapsed_markers[-1] = (start_index, depth, label)
+                else:
+                    collapsed_markers[-1] = (previous_start, previous_depth, previous_label)
+                continue
+            collapsed_markers.append((start_index, depth, label))
+
+        mapping: dict[str, str] = {}
+        for position, (start_index, _depth, label) in enumerate(collapsed_markers):
+            next_index = len(spine_paths)
+            for later_start, _later_depth, _later_label in collapsed_markers[position + 1 :]:
+                if later_start > start_index:
+                    next_index = later_start
+                    break
+
+            for path in spine_paths[start_index:next_index]:
+                if path in relevant_paths:
+                    mapping[path] = label
+
+        return mapping
+
+    if recipe_paths:
+        grouped_mapping = build_mapping(ignore_recipe_leaf_entries=True)
+        if grouped_mapping and len(grouped_mapping) >= max(1, len(recipe_paths) // 2):
+            return grouped_mapping
+
+    return build_mapping(ignore_recipe_leaf_entries=False)
 
 
 def _score_toc_entries(

@@ -147,6 +147,8 @@ class EpubRecipeParagraphProfile:
     ignored_image_classes: frozenset[str] = frozenset()
     defer_images_after_method: bool = False
     retain_buffered_images_after_category: bool = True
+    discard_leading_buffered_images: bool = False
+    attach_deferred_images_to_current_section: bool = False
     allow_plain_text_method: bool = False
     min_title_nodes: int = 2
 
@@ -221,6 +223,8 @@ EPUB_RECIPE_PARAGRAPH_PROFILES = (
         signature_classes=frozenset({"ingredient_list", "method", "rec_head"}),
         ignored_image_classes=frozenset({"inline_image_2"}),
         defer_images_after_method=True,
+        discard_leading_buffered_images=True,
+        attach_deferred_images_to_current_section=True,
         min_title_nodes=1,
     ),
     EpubRecipeParagraphProfile(
@@ -1018,9 +1022,12 @@ class OpenAIRecipeExtractor:
         counter = 0
 
         def flush() -> None:
-            nonlocal counter, current_lines, current_images, current_title, current_anchor, current_metadata, current_supplemental_heading, current_ingredient_lines, current_method_lines
+            nonlocal counter, current_lines, current_images, current_title, current_anchor, current_metadata, current_supplemental_heading, current_ingredient_lines, current_method_lines, buffered_images
             if not current_title or not current_lines:
                 return
+            if profile.attach_deferred_images_to_current_section and buffered_images:
+                current_images.extend(buffered_images)
+                buffered_images = []
             deduped_lines = self._dedupe_consecutive_lines(current_lines)
             counter += 1
             sections.append(
@@ -1061,6 +1068,9 @@ class OpenAIRecipeExtractor:
                 current_lines.extend(buffered_lines)
                 buffered_lines = []
             if buffered_images:
+                if profile.discard_leading_buffered_images and not sections:
+                    buffered_images = []
+                    return
                 if profile.retain_buffered_images_after_category or not current_category:
                     current_images = list(buffered_images)
                 buffered_images = []

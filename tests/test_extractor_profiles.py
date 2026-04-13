@@ -252,7 +252,7 @@ class ExtractorProfileTests(unittest.TestCase):
         self.assertEqual([image.filename for image in sections[0].images], ["recipe.jpg"])
         self.assertEqual(sections[1].chapter_title, "Egg and watercress")
 
-    def test_ottolenghi_simple_profile_defers_following_page_image_to_next_recipe(self) -> None:
+    def test_ottolenghi_simple_profile_ignores_leading_section_image_and_keeps_recipe_image_current(self) -> None:
         soup = BeautifulSoup(
             """
             <html><body>
@@ -294,12 +294,9 @@ class ExtractorProfileTests(unittest.TestCase):
         self.assertEqual(len(sections), 2)
         self.assertEqual(
             [image.filename for image in sections[0].images],
-            ["pg_3.jpg"],
-        )
-        self.assertEqual(
-            [image.filename for image in sections[1].images],
             ["pg_4.jpg"],
         )
+        self.assertEqual(sections[1].images, [])
         self.assertEqual(sections[0].metadata["intro"], "This is a quick breakfast.")
         self.assertEqual(sections[0].ingredient_lines[:2], ["30g unsalted butter", "2 tbsp olive oil"])
         self.assertEqual(sections[1].metadata["intro"], "This one is great for brunch.")

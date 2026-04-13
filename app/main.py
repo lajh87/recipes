@@ -554,6 +554,72 @@ def group_recipes_by_chapter(
     return [{"title": label, "recipes": items} for label, items in groups.items()]
 
 
+def build_recipe_sections_from_source_toc(
+    recipes: list[RecipeRecord],
+    source_table_of_contents: list[CookbookTocEntry],
+) -> list[dict[str, Any]]:
+    if not recipes or not source_table_of_contents:
+        return []
+
+    recipes_by_path: dict[str, list[RecipeRecord]] = defaultdict(list)
+    for recipe in recipes:
+        if recipe.source.format.lower() != "epub":
+            continue
+        path = normalize_epub_path(recipe.source.anchor or "").split("#", 1)[0]
+        if path:
+            recipes_by_path[path].append(recipe)
+
+    if not recipes_by_path:
+        return []
+
+    nodes: list[dict[str, Any]] = []
+
+    def collect_paths(entry: CookbookTocEntry, depth: int) -> set[str]:
+        own_path = normalize_epub_path(entry.href)
+        descendant_paths: set[str] = set()
+        if own_path in recipes_by_path:
+            descendant_paths.add(own_path)
+        for child in entry.children:
+            descendant_paths.update(collect_paths(child, depth + 1))
+        nodes.append({"entry": entry, "depth": depth, "paths": descendant_paths})
+        return descendant_paths
+
+    for entry in source_table_of_contents:
+        collect_paths(entry, 0)
+
+    candidate_depths = sorted(
+        {int(node["depth"]) for node in nodes if node["paths"] and len(node["paths"]) > 1}
+    )
+    if not candidate_depths:
+        return []
+
+    non_root_depths = [depth for depth in candidate_depths if depth > 0]
+    target_depth = non_root_depths[0] if non_root_depths else candidate_depths[0]
+
+    ordered_sections: list[dict[str, Any]] = []
+    assigned_recipe_ids: set[str] = set()
+    for node in nodes:
+        if node["depth"] != target_depth or not node["paths"]:
+            continue
+        section_recipes: list[RecipeRecord] = []
+        for recipe in recipes:
+            if recipe.id in assigned_recipe_ids:
+                continue
+            path = normalize_epub_path(recipe.source.anchor or "").split("#", 1)[0]
+            if path in node["paths"]:
+                section_recipes.append(recipe)
+                assigned_recipe_ids.add(recipe.id)
+        if section_recipes:
+            ordered_sections.append({"title": str(node["entry"].label), "recipes": section_recipes})
+
+    for recipe in recipes:
+        if recipe.id in assigned_recipe_ids:
+            continue
+        ordered_sections.append({"title": chapter_label_for_recipe(recipe, {}), "recipes": [recipe]})
+
+    return ordered_sections
+
+
 def flatten_cookbook_toc_labels(entries: list[CookbookTocEntry]) -> list[str]:
     labels: list[str] = []
     for entry in entries:
@@ -824,10 +890,12 @@ async def cookbook_page(
         except Exception:
             chapter_map = {}
     context = common_template_context(request, notice=notice)
-    recipe_sections = order_recipe_sections(
-        group_recipes_by_chapter(recipes, chapter_map),
-        cookbook.table_of_contents,
-    )
+    recipe_sections = build_recipe_sections_from_source_toc(recipes, cookbook.table_of_contents)
+    if not recipe_sections:
+        recipe_sections = order_recipe_sections(
+            group_recipes_by_chapter(recipes, chapter_map),
+            cookbook.table_of_contents,
+        )
     context.update(
         {
             "cookbook": cookbook,

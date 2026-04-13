@@ -5,7 +5,12 @@ from app.epub import (
     _parse_ncx_toc_entries,
     build_chapter_map_from_toc_entries,
 )
-from app.main import chapter_label_for_recipe, flatten_cookbook_toc_labels, order_recipe_sections
+from app.main import (
+    build_recipe_sections_from_source_toc,
+    chapter_label_for_recipe,
+    flatten_cookbook_toc_labels,
+    order_recipe_sections,
+)
 from app.models import CookbookTocEntry, RecipeRecord
 
 
@@ -192,6 +197,68 @@ class ChapterMappingTests(unittest.TestCase):
             },
         )
 
+    def test_nested_grouped_recipe_leaves_prefer_parent_section_labels(self) -> None:
+        entries = [
+            CookbookTocEntry(
+                label="PROCESS",
+                href="index_split_008.html",
+                children=[
+                    CookbookTocEntry(
+                        label="Charring",
+                        href="index_split_008.html",
+                        children=[
+                            CookbookTocEntry(
+                                label="CALVIN'S GRILLED PEACHES AND RUNNER BEANS",
+                                href="index_split_015.html",
+                                children=[],
+                            ),
+                            CookbookTocEntry(
+                                label="ICEBERG WEDGES WITH SMOKY AUBERGINE CREAM",
+                                href="index_split_017.html",
+                                children=[],
+                            ),
+                        ],
+                    ),
+                    CookbookTocEntry(
+                        label="Browning",
+                        href="index_split_029.html",
+                        children=[
+                            CookbookTocEntry(
+                                label="WHOLE ROASTED CELERIAC THREE WAYS",
+                                href="index_split_031.html",
+                                children=[],
+                            ),
+                        ],
+                    ),
+                ],
+            )
+        ]
+
+        mapping = build_chapter_map_from_toc_entries(
+            entries,
+            spine_paths=[
+                "index_split_008.html",
+                "index_split_015.html",
+                "index_split_017.html",
+                "index_split_029.html",
+                "index_split_031.html",
+            ],
+            recipe_paths={
+                "index_split_015.html",
+                "index_split_017.html",
+                "index_split_031.html",
+            },
+        )
+
+        self.assertEqual(
+            mapping,
+            {
+                "index_split_015.html": "Charring",
+                "index_split_017.html": "Charring",
+                "index_split_031.html": "Browning",
+            },
+        )
+
     def test_chapter_label_uses_anchor_path_without_fragment(self) -> None:
         recipe = RecipeRecord.model_validate(
             {
@@ -296,6 +363,76 @@ class ChapterMappingTests(unittest.TestCase):
         self.assertEqual(
             [section["title"] for section in ordered],
             ["Vegetables", "Fish", "Desserts"],
+        )
+
+    def test_build_recipe_sections_from_source_toc_prefers_group_headings(self) -> None:
+        toc = [
+            CookbookTocEntry(
+                label="PROCESS",
+                href="index_split_008.html",
+                children=[
+                    CookbookTocEntry(
+                        label="Charring",
+                        href="index_split_015.html",
+                        children=[
+                            CookbookTocEntry(label="Recipe One", href="index_split_015.html", children=[]),
+                            CookbookTocEntry(label="Recipe Two", href="index_split_017.html", children=[]),
+                        ],
+                    ),
+                    CookbookTocEntry(
+                        label="Browning",
+                        href="index_split_029.html",
+                        children=[
+                            CookbookTocEntry(label="Recipe Three", href="index_split_029.html", children=[]),
+                            CookbookTocEntry(label="Recipe Four", href="index_split_031.html", children=[]),
+                        ],
+                    ),
+                ],
+            )
+        ]
+
+        def recipe(recipe_id: str, title: str, anchor: str) -> RecipeRecord:
+            return RecipeRecord.model_validate(
+                {
+                    "id": recipe_id,
+                    "cookbook_id": "book-1",
+                    "cookbook_title": "Book",
+                    "title": title,
+                    "ingredients": [],
+                    "ingredient_names": [],
+                    "method_steps": [],
+                    "images": [],
+                    "source": {
+                        "object_key": "ebooks/book.epub",
+                        "format": "epub",
+                        "chapter_title": title,
+                        "anchor": anchor,
+                        "excerpt": title,
+                    },
+                    "extraction": {
+                        "model": "gpt-5.4-mini",
+                        "confidence": 0.9,
+                        "notes": [],
+                        "extracted_at": "2026-04-12T00:00:00Z",
+                        "needs_review_reasons": [],
+                    },
+                    "review": {"status": "pending_review"},
+                }
+            )
+
+        sections = build_recipe_sections_from_source_toc(
+            [
+                recipe("r1", "Recipe One", "index_split_015.html#1"),
+                recipe("r2", "Recipe Two", "index_split_017.html#1"),
+                recipe("r3", "Recipe Three", "index_split_029.html#1"),
+                recipe("r4", "Recipe Four", "index_split_031.html#1"),
+            ],
+            toc,
+        )
+
+        self.assertEqual(
+            [(section["title"], len(section["recipes"])) for section in sections],
+            [("Charring", 2), ("Browning", 2)],
         )
 
 

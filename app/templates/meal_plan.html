@@ -8,7 +8,7 @@
       <p class="page-kicker">Planning</p>
       <h1>Weekly Meal Plan</h1>
       <p>
-        Organise meals by week, day, and meal slot. Each slot can be checked off and can optionally link to a recipe in the library.
+        Organise meals by week, day, and meal slot. Each meal can be a linked library recipe or a brand new custom item, and linked recipes roll into a shopping checklist automatically.
         {% if meal_plan.imported_from_legacy and meal_plan.legacy_source_path %}
           The current plan was seeded from the most recent {{ meal_plan.weeks|length }} sections in <code>{{ meal_plan.legacy_source_path }}</code>.
         {% endif %}
@@ -31,17 +31,18 @@
     method="post"
     data-meal-plan-form
     data-meal-plan-suggestions-url="{{ url_for('meal_plan_recipe_suggestions_api') }}"
+    data-meal-plan-recipe-url-template="{{ url_for('recipe_page', recipe_id='__RECIPE_ID__') }}"
   >
+    <button class="visually-hidden" type="submit" aria-hidden="true" tabindex="-1">Autosave</button>
     <section class="panel">
       <div class="section-heading">
         <div>
           <h2>Planner</h2>
-          <p>Saved to <code>{{ meal_plan.source_path }}</code>. Type a recipe title in the recipe field to attach an optional library recipe to any meal slot.</p>
+          <p>Saved automatically in {{ meal_plan.source_path }}. Start with a recipe from the library or type your own meal, then use the week date to anchor the plan.</p>
           <p class="meal-plan-form__status" data-meal-plan-save-status aria-live="polite">Autosave ready.</p>
         </div>
         <div class="card-actions">
           <button class="button button--secondary" type="submit" name="planner_action" value="add_week">Add Week</button>
-          <button class="button" type="submit" name="planner_action" value="save">Save Plan</button>
         </div>
       </div>
     </section>
@@ -67,128 +68,152 @@
           <input type="hidden" name="week_id" value="{{ week.id }}" />
           <div class="meal-plan-week__header">
             <div class="meal-plan-week__title-group">
-              <label class="meal-plan-week__title-label" for="week-title-{{ week.id }}">Week Title</label>
+              <label class="meal-plan-week__title-label" for="week-start-{{ week.id }}">Week Start</label>
               <input
-                id="week-title-{{ week.id }}"
+                id="week-start-{{ week.id }}"
                 class="meal-plan-week__title-input"
-                type="text"
-                name="week_title__{{ week.id }}"
-                value="{{ week.title }}"
-                placeholder="Week of 14 April"
+                type="date"
+                name="week_start_on__{{ week.id }}"
+                value="{{ week.date_input_value }}"
               />
+              <p class="meal-plan-week__title-display">
+                {% if week.start_on %}
+                  {{ week.title }}
+                {% elif week.legacy_title %}
+                  Imported label: {{ week.legacy_title }}
+                {% else %}
+                  Pick the week start date.
+                {% endif %}
+              </p>
             </div>
             <div class="meal-plan-week__actions">
               <span class="pill">{{ week.planned_slot_count }} meals</span>
               <span class="pill">{{ week.linked_slot_count }} linked</span>
+              <span class="pill">{{ week.shopping_item_count }} ingredients</span>
               <button class="button button--secondary" type="submit" name="planner_action" value="add_row:{{ week.id }}">Add Row</button>
               <button class="button button--secondary" type="submit" name="planner_action" value="remove:{{ week.id }}">Remove Week</button>
             </div>
           </div>
 
-          <div class="meal-plan-table-wrap">
-            <table class="meal-plan-table">
-              <thead>
-                <tr>
-                  <th scope="col">Plan</th>
-                  <th scope="col">Recipe</th>
-                  <th scope="col">Weekday</th>
-                  <th scope="col">Meal</th>
-                  <th scope="col">Done</th>
-                  <th scope="col"><span class="visually-hidden">Action</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for entry in week.entries %}
-                    {% set row_prefix = 'entry__' ~ week.id ~ '__' ~ entry.id %}
-                    <tr class="meal-plan-table__row{% if entry.completed and entry.title %} is-complete{% endif %}">
-                      <td>
-                        <input type="hidden" name="week_entry_id__{{ week.id }}" value="{{ entry.id }}" />
-                        <label class="meal-plan-table__field">
-                          <span class="visually-hidden">{{ week.title }} plan</span>
-                          <input
-                            type="text"
-                            name="{{ row_prefix }}__title"
-                            value="{{ entry.title }}"
-                            placeholder="Plan this meal"
-                            data-meal-plan-title
-                          />
-                        </label>
-                      </td>
-                      <td>
-                        <input type="hidden" name="{{ row_prefix }}__recipe_id" value="{{ entry.recipe_id or '' }}" data-meal-plan-recipe-id />
-                        <label class="meal-plan-table__field">
-                          <span class="visually-hidden">{{ week.title }} linked recipe</span>
-                          <input
-                            type="text"
-                            name="{{ row_prefix }}__recipe_ref"
-                            list="meal-plan-recipe-options"
-                            value="{{ entry.recipe_option_value }}"
-                            placeholder="Optional recipe link"
-                            data-meal-plan-recipe
-                            autocomplete="off"
-                          />
-                        </label>
-                        {% if entry.recipe %}
-                          <a class="meal-plan-table__recipe-link text-link" href="{{ url_for('recipe_page', recipe_id=entry.recipe.id) }}">
-                            {{ entry.recipe.title }}
-                          </a>
-                        {% endif %}
-                      </td>
-                      <td>
-                        <label class="meal-plan-table__field">
-                          <span class="visually-hidden">{{ week.title }} weekday</span>
-                          <input
-                            type="text"
-                            name="{{ row_prefix }}__weekday"
-                            list="meal-plan-weekday-options"
-                            value="{{ entry.weekday }}"
-                            placeholder="Weekday"
-                          />
-                        </label>
-                      </td>
-                      <td>
-                        <label class="meal-plan-table__field">
-                          <span class="visually-hidden">{{ week.title }} meal</span>
-                          <input
-                            type="text"
-                            name="{{ row_prefix }}__meal"
-                            list="meal-plan-meal-options"
-                            value="{{ entry.meal }}"
-                            placeholder="Meal"
-                          />
-                        </label>
-                      </td>
-                      <td class="meal-plan-table__done">
-                        <label class="meal-plan-table__checkbox">
-                          <span class="visually-hidden">{{ week.title }} completed</span>
-                          <input
-                            type="checkbox"
-                            name="{{ row_prefix }}__completed"
-                            value="true"
-                            {{ 'checked' if entry.completed else '' }}
-                          />
-                        </label>
-                      </td>
-                      <td class="meal-plan-table__action">
-                        {% if entry.recipe %}
-                          <a class="button button--secondary" href="{{ url_for('recipe_page', recipe_id=entry.recipe.id) }}">Open Recipe</a>
-                        {% endif %}
-                      </td>
-                    </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          <div class="meal-plan-week__entries" data-meal-plan-week-entries>
+            <div class="meal-plan-week__columns" aria-hidden="true">
+              <span>Move</span>
+              <span>Day</span>
+              <span>Slot</span>
+              <span>Recipe or Item</span>
+              <span>Done</span>
+              <span>Link</span>
+            </div>
+            {% for entry in week.entries %}
+              {% set row_prefix = 'entry__' ~ week.id ~ '__' ~ entry.id %}
+              <section class="meal-plan-row{% if entry.completed and entry.title %} is-complete{% endif %}" data-meal-plan-row>
+                <input type="hidden" name="week_entry_id__{{ week.id }}" value="{{ entry.id }}" />
+                <input type="hidden" name="{{ row_prefix }}__recipe_id" value="{{ entry.recipe_id or '' }}" data-meal-plan-recipe-id />
+                <div class="meal-plan-row__drag">
+                  <button
+                    class="meal-plan-row__drag-handle"
+                    type="button"
+                    draggable="true"
+                    data-meal-plan-drag-handle
+                    aria-label="Drag to reorder this meal"
+                    title="Drag to reorder this meal"
+                  >
+                    Drag
+                  </button>
+                </div>
+                <div class="meal-plan-row__field">
+                  <label class="meal-plan-row__label meal-plan-row__label--column" for="meal-weekday-{{ week.id }}-{{ entry.id }}">Day</label>
+                  <input
+                    id="meal-weekday-{{ week.id }}-{{ entry.id }}"
+                    type="text"
+                    name="{{ row_prefix }}__weekday"
+                    list="meal-plan-weekday-options"
+                    value="{{ entry.weekday }}"
+                    placeholder="Weekday"
+                  />
+                </div>
+                <div class="meal-plan-row__field">
+                  <label class="meal-plan-row__label meal-plan-row__label--column" for="meal-slot-{{ week.id }}-{{ entry.id }}">Slot</label>
+                  <input
+                    id="meal-slot-{{ week.id }}-{{ entry.id }}"
+                    type="text"
+                    name="{{ row_prefix }}__meal"
+                    list="meal-plan-meal-options"
+                    value="{{ entry.meal }}"
+                    placeholder="Meal"
+                  />
+                </div>
+                <div class="meal-plan-row__item">
+                  <label class="meal-plan-row__label meal-plan-row__label--column" for="meal-item-{{ week.id }}-{{ entry.id }}">Recipe or Item</label>
+                  <input
+                    id="meal-item-{{ week.id }}-{{ entry.id }}"
+                    type="text"
+                    name="{{ row_prefix }}__title"
+                    list="meal-plan-recipe-options"
+                    value="{{ entry.title or (entry.recipe.title if entry.recipe else '') }}"
+                    placeholder="Select a recipe or add a custom meal"
+                    data-meal-plan-item
+                    autocomplete="off"
+                  />
+                </div>
+                <label class="meal-plan-row__done" for="meal-done-{{ week.id }}-{{ entry.id }}">
+                  <span class="meal-plan-row__label meal-plan-row__label--column">Done</span>
+                  <input
+                    id="meal-done-{{ week.id }}-{{ entry.id }}"
+                    type="checkbox"
+                    name="{{ row_prefix }}__completed"
+                    value="true"
+                    {{ 'checked' if entry.completed else '' }}
+                  />
+                </label>
+                <div class="meal-plan-row__action">
+                  <span class="meal-plan-row__label meal-plan-row__label--column">Link</span>
+                  <span data-meal-plan-row-action-content>
+                    {% if entry.recipe %}
+                      <a class="button button--secondary" href="{{ url_for('recipe_page', recipe_id=entry.recipe.id) }}">Open Recipe</a>
+                    {% else %}
+                      <span class="meal-plan-row__action-placeholder">Custom item</span>
+                    {% endif %}
+                  </span>
+                </div>
+              </section>
+            {% endfor %}
           </div>
 
-          <div class="meal-plan-week__notes">
-            <label for="week-notes-{{ week.id }}" class="review-note-label">Week Notes</label>
-            <textarea
-              id="week-notes-{{ week.id }}"
-              class="review-note meal-plan-week__notes-input"
-              name="week_notes__{{ week.id }}"
-              placeholder="Shopping notes, carry-overs, imported leftovers, or recipe ideas"
-            >{{ week.notes }}</textarea>
-          </div>
+          <section class="meal-plan-shopping">
+            <div class="meal-plan-shopping__header">
+              <h3>Shopping List</h3>
+              <p>Aggregated from linked recipes in this week.</p>
+            </div>
+            {% if week.shopping_list %}
+              <details class="meal-plan-shopping__details" {{ 'open' if week.shopping_item_count <= 16 else '' }}>
+                <summary class="meal-plan-shopping__summary">
+                  <span class="meal-plan-shopping__summary-copy">
+                    <strong>{{ week.shopping_item_count }} items</strong>
+                    <span>Expand the weekly checklist</span>
+                  </span>
+                  <span class="pill">Checklist</span>
+                </summary>
+                <div class="meal-plan-shopping__body">
+                  <ul class="shopping-checklist">
+                    {% for item in week.shopping_list %}
+                      <li>
+                        <label class="shopping-checklist__item">
+                          <input type="checkbox" />
+                          <span class="shopping-checklist__content">
+                            <span class="shopping-checklist__name">{{ item.name }}</span>
+                            <span class="shopping-checklist__recipes">{{ item.recipe_summary }}</span>
+                          </span>
+                        </label>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              </details>
+            {% else %}
+              <p class="meal-plan-shopping__empty">Link at least one library recipe in this week to build a shopping list.</p>
+            {% endif %}
+          </section>
         </article>
       {% endfor %}
     </section>
@@ -196,7 +221,6 @@
     <section class="panel">
       <div class="card-actions meal-plan-form__footer">
         <button class="button button--secondary" type="submit" name="planner_action" value="add_week">Add Week</button>
-        <button class="button" type="submit" name="planner_action" value="save">Save Plan</button>
       </div>
     </section>
   </form>

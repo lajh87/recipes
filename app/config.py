@@ -80,6 +80,10 @@ class Settings(BaseSettings):
         return f"{self.redis_key_prefix}:recipes:favorites"
 
     @property
+    def meal_plan_key(self) -> str:
+        return f"{self.redis_key_prefix}:meal-plan"
+
+    @property
     def want_to_try_recipe_index_key(self) -> str:
         return f"{self.redis_key_prefix}:recipes:want-to-try"
 

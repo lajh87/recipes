@@ -393,6 +393,14 @@ function findMealPlanRecipeOptionByLabel(value, recipeOptions) {
   return recipeOptions.find((option) => option.label === label) || null;
 }
 
+function findMealPlanRecipeOptionById(value, recipeOptions) {
+  const recipeId = value.trim();
+  if (!recipeId) {
+    return null;
+  }
+  return recipeOptions.find((option) => option.id === recipeId) || null;
+}
+
 function initMealPlanAutoLink() {
   const mealPlanForm = document.querySelector("[data-meal-plan-form]");
   if (!(mealPlanForm instanceof HTMLFormElement)) {
@@ -400,6 +408,7 @@ function initMealPlanAutoLink() {
   }
 
   const mealPlanSuggestionsUrl = mealPlanForm.dataset.mealPlanSuggestionsUrl || "";
+  const mealPlanRecipeUrlTemplate = mealPlanForm.dataset.mealPlanRecipeUrlTemplate || "";
   const recipeOptions = parseMealPlanRecipeOptions();
   const recipeOptionsDatalist = document.getElementById("meal-plan-recipe-options");
   const saveStatus = mealPlanForm.querySelector("[data-meal-plan-save-status]");
@@ -414,6 +423,9 @@ function initMealPlanAutoLink() {
   let recipeSuggestionController = null;
   let recipeSuggestionRequestId = 0;
   let saveNonce = 0;
+  let draggingRow = null;
+  let dragSourceWeekEntries = null;
+  let dragStartOrder = "";
 
   if (recipeOptionsDatalist instanceof HTMLDataListElement) {
     recipeOptionsDatalist.innerHTML = "";
@@ -444,83 +456,116 @@ function initMealPlanAutoLink() {
     }
   }
 
-  function mealPlanRowElements(titleInput) {
-    const row = titleInput.closest("tr");
-    if (!(row instanceof HTMLTableRowElement)) {
-      return null;
-    }
-    const recipeInput = row.querySelector("[data-meal-plan-recipe]");
-    const recipeIdInput = row.querySelector("[data-meal-plan-recipe-id]");
-    if (!(recipeInput instanceof HTMLInputElement) || !(recipeIdInput instanceof HTMLInputElement)) {
-      return null;
-    }
-    return { row, recipeInput, recipeIdInput };
-  }
-
-  function setMealPlanRecipeSelection(recipeInput, recipeIdInput, option, { autofilled, manual }) {
-    recipeInput.value = option.label;
-    recipeIdInput.value = option.id;
-    recipeInput.dataset.autofilled = autofilled ? "true" : "false";
-    recipeInput.dataset.manualEntry = manual ? "true" : "false";
-  }
-
-  function clearMealPlanRecipeSelection(recipeInput, recipeIdInput) {
-    recipeIdInput.value = "";
-    if (recipeInput.dataset.autofilled === "true") {
-      recipeInput.value = "";
-    }
-    recipeInput.dataset.autofilled = "false";
-    recipeInput.dataset.manualEntry = recipeInput.value.trim() ? "true" : "false";
-  }
-
-  function syncMealPlanRecipeInput(recipeInput) {
-    if (!(recipeInput instanceof HTMLInputElement)) {
-      return null;
-    }
-    const row = recipeInput.closest("tr");
-    if (!(row instanceof HTMLTableRowElement)) {
+  function mealPlanRowElements(itemInput) {
+    const row = itemInput.closest("[data-meal-plan-row]");
+    if (!(row instanceof HTMLElement)) {
       return null;
     }
     const recipeIdInput = row.querySelector("[data-meal-plan-recipe-id]");
     if (!(recipeIdInput instanceof HTMLInputElement)) {
       return null;
     }
+    const actionContent = row.querySelector("[data-meal-plan-row-action-content]");
+    return { row, recipeIdInput, actionContent };
+  }
 
-    const exactMatch = findMealPlanRecipeOptionByLabel(recipeInput.value, recipeOptions);
+  function mealPlanRecipeUrl(recipeId) {
+    const trimmedRecipeId = recipeId.trim();
+    if (!mealPlanRecipeUrlTemplate || !trimmedRecipeId) {
+      return "";
+    }
+    return mealPlanRecipeUrlTemplate.replace("__RECIPE_ID__", encodeURIComponent(trimmedRecipeId));
+  }
+
+  function renderMealPlanRowAction(actionContent, option) {
+    if (!(actionContent instanceof HTMLElement)) {
+      return;
+    }
+
+    actionContent.replaceChildren();
+    if (option) {
+      const link = document.createElement("a");
+      link.className = "button button--secondary";
+      link.href = mealPlanRecipeUrl(option.id);
+      link.textContent = "Open Recipe";
+      actionContent.appendChild(link);
+      return;
+    }
+
+    const placeholder = document.createElement("span");
+    placeholder.className = "meal-plan-row__action-placeholder";
+    placeholder.textContent = "Custom item";
+    actionContent.appendChild(placeholder);
+  }
+
+  function setMealPlanRecipeSelection(itemInput, rowElements, option) {
+    itemInput.value = option.title;
+    rowElements.recipeIdInput.value = option.id;
+    itemInput.dataset.recipeLinked = "true";
+    renderMealPlanRowAction(rowElements.actionContent, option);
+  }
+
+  function clearMealPlanRecipeSelection(itemInput, rowElements) {
+    rowElements.recipeIdInput.value = "";
+    itemInput.dataset.recipeLinked = "false";
+    renderMealPlanRowAction(rowElements.actionContent, null);
+  }
+
+  function syncMealPlanItemInput(itemInput) {
+    if (!(itemInput instanceof HTMLInputElement)) {
+      return null;
+    }
+    const rowElements = mealPlanRowElements(itemInput);
+    if (!rowElements) {
+      return null;
+    }
+    const { recipeIdInput, actionContent } = rowElements;
+
+    const currentValue = itemInput.value.trim();
+    if (!currentValue) {
+      clearMealPlanRecipeSelection(itemInput, rowElements);
+      return null;
+    }
+
+    const linkedOption = findMealPlanRecipeOptionById(recipeIdInput.value, recipeOptions);
+    if (linkedOption && (currentValue === linkedOption.title || currentValue === linkedOption.label)) {
+      itemInput.dataset.recipeLinked = "true";
+      renderMealPlanRowAction(actionContent, linkedOption);
+      return linkedOption;
+    }
+
+    const exactMatch = findMealPlanRecipeOptionByLabel(currentValue, recipeOptions);
     if (exactMatch) {
-      setMealPlanRecipeSelection(recipeInput, recipeIdInput, exactMatch, { autofilled: false, manual: true });
+      setMealPlanRecipeSelection(itemInput, rowElements, exactMatch);
       return exactMatch;
     }
 
-    if (!recipeInput.value.trim()) {
-      clearMealPlanRecipeSelection(recipeInput, recipeIdInput);
-      return null;
+    const normalizedValue = normalizeMealPlanText(currentValue);
+    if (normalizedValue) {
+      const exactTitleMatches = recipeOptions.filter((option) => option.normalizedTitle === normalizedValue);
+      if (exactTitleMatches.length === 1) {
+        setMealPlanRecipeSelection(itemInput, rowElements, exactTitleMatches[0]);
+        return exactTitleMatches[0];
+      }
     }
 
-    recipeIdInput.value = "";
-    recipeInput.dataset.autofilled = "false";
-    recipeInput.dataset.manualEntry = "true";
+    clearMealPlanRecipeSelection(itemInput, rowElements);
     return null;
   }
 
-  function maybeResolveManualRecipeInput(recipeInput) {
-    const row = recipeInput.closest("tr");
-    if (!(row instanceof HTMLTableRowElement)) {
+  function maybeResolveMealPlanItemInput(itemInput) {
+    const rowElements = mealPlanRowElements(itemInput);
+    if (!rowElements) {
       return;
     }
-    const recipeIdInput = row.querySelector("[data-meal-plan-recipe-id]");
-    if (!(recipeIdInput instanceof HTMLInputElement)) {
-      return;
-    }
-
-    const exactMatch = syncMealPlanRecipeInput(recipeInput);
-    if (exactMatch || !recipeInput.value.trim()) {
+    const exactMatch = syncMealPlanItemInput(itemInput);
+    if (exactMatch || !itemInput.value.trim()) {
       return;
     }
 
-    const fuzzyMatch = findBestMealPlanRecipeMatch(recipeInput.value, recipeOptions);
+    const fuzzyMatch = findBestMealPlanRecipeMatch(itemInput.value, recipeOptions);
     if (fuzzyMatch) {
-      setMealPlanRecipeSelection(recipeInput, recipeIdInput, fuzzyMatch, { autofilled: false, manual: true });
+      setMealPlanRecipeSelection(itemInput, rowElements, fuzzyMatch);
     }
   }
 
@@ -581,34 +626,6 @@ function initMealPlanAutoLink() {
     }
   }
 
-  function maybeAutoFillRecipe(titleInput) {
-    if (!(titleInput instanceof HTMLInputElement)) {
-      return;
-    }
-    const rowElements = mealPlanRowElements(titleInput);
-    if (!rowElements) {
-      return;
-    }
-    const { recipeInput, recipeIdInput } = rowElements;
-
-    const currentRecipeValue = recipeInput.value.trim();
-    const isManual = recipeInput.dataset.manualEntry === "true";
-    const isAutofilled = recipeInput.dataset.autofilled === "true";
-    if (currentRecipeValue && isManual && !isAutofilled) {
-      return;
-    }
-
-    const match = findBestMealPlanRecipeMatch(titleInput.value, recipeOptions);
-    if (match) {
-      setMealPlanRecipeSelection(recipeInput, recipeIdInput, match, { autofilled: true, manual: false });
-      return;
-    }
-
-    if (isAutofilled) {
-      clearMealPlanRecipeSelection(recipeInput, recipeIdInput);
-    }
-  }
-
   async function saveMealPlanNow() {
     window.clearTimeout(autosaveTimer);
     const currentSave = ++saveNonce;
@@ -657,6 +674,51 @@ function initMealPlanAutoLink() {
     }, delay);
   }
 
+  function mealPlanWeekOrder(weekEntries) {
+    if (!(weekEntries instanceof HTMLElement)) {
+      return "";
+    }
+    return Array.from(weekEntries.querySelectorAll("[data-meal-plan-row]"))
+      .map((row) => row.querySelector('input[name^="week_entry_id__"]'))
+      .filter((input) => input instanceof HTMLInputElement)
+      .map((input) => input.value)
+      .join("|");
+  }
+
+  function mealPlanDragTargetRow(weekEntries, clientY) {
+    if (!(weekEntries instanceof HTMLElement)) {
+      return null;
+    }
+
+    const rows = Array.from(weekEntries.querySelectorAll("[data-meal-plan-row]"))
+      .filter((row) => row instanceof HTMLElement && row !== draggingRow);
+    let targetRow = null;
+    let targetOffset = Number.NEGATIVE_INFINITY;
+
+    for (const row of rows) {
+      const bounds = row.getBoundingClientRect();
+      const offset = clientY - bounds.top - (bounds.height / 2);
+      if (offset < 0 && offset > targetOffset) {
+        targetOffset = offset;
+        targetRow = row;
+      }
+    }
+
+    return targetRow;
+  }
+
+  function cleanupMealPlanDragState() {
+    if (draggingRow instanceof HTMLElement) {
+      draggingRow.classList.remove("is-dragging");
+    }
+    if (dragSourceWeekEntries instanceof HTMLElement) {
+      dragSourceWeekEntries.classList.remove("is-drag-target");
+    }
+    draggingRow = null;
+    dragSourceWeekEntries = null;
+    dragStartOrder = "";
+  }
+
   mealPlanForm.addEventListener("submit", () => {
     window.clearTimeout(autosaveTimer);
     if (autosaveController) {
@@ -665,22 +727,12 @@ function initMealPlanAutoLink() {
   });
 
   mealPlanForm.addEventListener("input", (event) => {
-    const titleInput = event.target.closest("[data-meal-plan-title]");
-    if (titleInput instanceof HTMLInputElement) {
-      window.clearTimeout(titleInput._mealPlanAutoLinkTimer);
-      titleInput._mealPlanAutoLinkTimer = window.setTimeout(() => {
-        maybeAutoFillRecipe(titleInput);
-      }, 180);
-      queueMealPlanSave();
-      return;
-    }
-
-    const recipeInput = event.target.closest("[data-meal-plan-recipe]");
-    if (recipeInput instanceof HTMLInputElement) {
-      syncMealPlanRecipeInput(recipeInput);
-      window.clearTimeout(recipeInput._mealPlanSuggestionTimer);
-      recipeInput._mealPlanSuggestionTimer = window.setTimeout(() => {
-        void loadMealPlanRecipeSuggestions(recipeInput.value);
+    const itemInput = event.target.closest("[data-meal-plan-item]");
+    if (itemInput instanceof HTMLInputElement) {
+      syncMealPlanItemInput(itemInput);
+      window.clearTimeout(itemInput._mealPlanSuggestionTimer);
+      itemInput._mealPlanSuggestionTimer = window.setTimeout(() => {
+        void loadMealPlanRecipeSuggestions(itemInput.value);
       }, 120);
       queueMealPlanSave();
       return;
@@ -696,33 +748,900 @@ function initMealPlanAutoLink() {
   });
 
   mealPlanForm.addEventListener("blur", (event) => {
-    const titleInput = event.target.closest("[data-meal-plan-title]");
-    if (titleInput instanceof HTMLInputElement) {
-      maybeAutoFillRecipe(titleInput);
-      queueMealPlanSave(120);
-      return;
-    }
-
-    const recipeInput = event.target.closest("[data-meal-plan-recipe]");
-    if (recipeInput instanceof HTMLInputElement) {
-      maybeResolveManualRecipeInput(recipeInput);
-      void loadMealPlanRecipeSuggestions(recipeInput.value);
+    const itemInput = event.target.closest("[data-meal-plan-item]");
+    if (itemInput instanceof HTMLInputElement) {
+      maybeResolveMealPlanItemInput(itemInput);
+      void loadMealPlanRecipeSuggestions(itemInput.value);
       queueMealPlanSave(120);
     }
   }, true);
 
   mealPlanForm.addEventListener("focusin", (event) => {
-    const recipeInput = event.target.closest("[data-meal-plan-recipe]");
-    if (recipeInput instanceof HTMLInputElement) {
-      void loadMealPlanRecipeSuggestions(recipeInput.value);
+    const itemInput = event.target.closest("[data-meal-plan-item]");
+    if (itemInput instanceof HTMLInputElement) {
+      void loadMealPlanRecipeSuggestions(itemInput.value);
     }
   });
 
-  mealPlanForm.querySelectorAll("[data-meal-plan-recipe]").forEach((input) => {
+  mealPlanForm.querySelectorAll("[data-meal-plan-item]").forEach((input) => {
     if (input instanceof HTMLInputElement) {
-      syncMealPlanRecipeInput(input);
+      syncMealPlanItemInput(input);
     }
   });
+
+  mealPlanForm.addEventListener("dragstart", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const handle = event.target.closest("[data-meal-plan-drag-handle]");
+    if (!(handle instanceof HTMLElement)) {
+      return;
+    }
+
+    const row = handle.closest("[data-meal-plan-row]");
+    const weekEntries = row?.closest("[data-meal-plan-week-entries]");
+    if (!(row instanceof HTMLElement) || !(weekEntries instanceof HTMLElement) || !event.dataTransfer) {
+      return;
+    }
+
+    draggingRow = row;
+    dragSourceWeekEntries = weekEntries;
+    dragStartOrder = mealPlanWeekOrder(weekEntries);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", dragStartOrder);
+    event.dataTransfer.setDragImage(row, 24, 24);
+    row.classList.add("is-dragging");
+    weekEntries.classList.add("is-drag-target");
+  });
+
+  mealPlanForm.addEventListener("dragover", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const weekEntries = event.target.closest("[data-meal-plan-week-entries]");
+    if (
+      !(draggingRow instanceof HTMLElement)
+      || !(dragSourceWeekEntries instanceof HTMLElement)
+      || !(weekEntries instanceof HTMLElement)
+      || weekEntries !== dragSourceWeekEntries
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    const targetRow = mealPlanDragTargetRow(weekEntries, event.clientY);
+    if (targetRow) {
+      weekEntries.insertBefore(draggingRow, targetRow);
+      return;
+    }
+    weekEntries.append(draggingRow);
+  });
+
+  mealPlanForm.addEventListener("drop", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    const weekEntries = event.target.closest("[data-meal-plan-week-entries]");
+    if (
+      !(draggingRow instanceof HTMLElement)
+      || !(dragSourceWeekEntries instanceof HTMLElement)
+      || !(weekEntries instanceof HTMLElement)
+      || weekEntries !== dragSourceWeekEntries
+    ) {
+      return;
+    }
+    event.preventDefault();
+  });
+
+  mealPlanForm.addEventListener("dragend", () => {
+    const startOrder = dragStartOrder;
+    const finalOrder = mealPlanWeekOrder(dragSourceWeekEntries);
+    cleanupMealPlanDragState();
+    if (startOrder && finalOrder && startOrder !== finalOrder) {
+      queueMealPlanSave(120);
+    }
+  });
+}
+
+function initIngredientNetwork() {
+  const container = document.querySelector("[data-ingredient-network]");
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+
+  const canvas = container.querySelector("[data-ingredient-network-canvas]");
+  const fallback = container.querySelector("[data-ingredient-network-fallback]");
+  const payloadNode = container.querySelector("[data-network-payload]");
+  const controls = container.querySelector("[data-ingredient-network-controls]");
+  const slider = container.querySelector("[data-ingredient-network-slider]");
+  const sliderValue = container.querySelector("[data-ingredient-network-slider-value]");
+  const hint = container.querySelector("[data-ingredient-network-hint]");
+  if (!(canvas instanceof HTMLElement)) {
+    return;
+  }
+
+  let payload = null;
+  try {
+    payload = JSON.parse(payloadNode?.textContent || "{}");
+  } catch (error) {
+    console.error(error);
+  }
+
+  const nodes = Array.isArray(payload?.nodes) ? payload.nodes : [];
+  const links = Array.isArray(payload?.links) ? payload.links : [];
+  if (nodes.length === 0 || links.length === 0) {
+    canvas.hidden = true;
+    if (controls instanceof HTMLElement) {
+      controls.hidden = true;
+    }
+    if (fallback instanceof HTMLElement) {
+      fallback.hidden = false;
+    }
+    return;
+  }
+
+  const previewNodeCount = nodes.length;
+  const totalNodeCount = Math.max(Number(payload?.node_count || 0), previewNodeCount);
+  const sliderMin = Math.min(
+    previewNodeCount,
+    Math.max(1, Number(payload?.slider_min_node_count || Math.min(previewNodeCount, 20))),
+  );
+  const sliderMax = Math.min(
+    previewNodeCount,
+    Math.max(sliderMin, Number(payload?.slider_max_node_count || previewNodeCount)),
+  );
+  const sliderStep = Math.max(1, Number(payload?.slider_step || (sliderMax <= 40 ? 1 : 5)));
+  const defaultDisplayCount = Math.max(
+    sliderMin,
+    Math.min(sliderMax, Number(payload?.default_display_node_count || sliderMax)),
+  );
+  const tooltip = document.createElement("div");
+  tooltip.className = "ingredient-network__tooltip";
+  tooltip.hidden = true;
+  container.appendChild(tooltip);
+  let currentDisplayCount = defaultDisplayCount;
+  let pendingFrame = null;
+  let activeDrag = null;
+  const svgNamespace = "http://www.w3.org/2000/svg";
+
+  function escapeIngredientNetworkText(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function createSvgElement(tagName) {
+    return document.createElementNS(svgNamespace, tagName);
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function hexToRgb(hex) {
+    const normalized = String(hex).replace("#", "");
+    const value = normalized.length === 3
+      ? normalized.split("").map((part) => part + part).join("")
+      : normalized;
+    return {
+      r: Number.parseInt(value.slice(0, 2), 16),
+      g: Number.parseInt(value.slice(2, 4), 16),
+      b: Number.parseInt(value.slice(4, 6), 16),
+    };
+  }
+
+  function interpolateColor(startHex, endHex, t) {
+    const start = hexToRgb(startHex);
+    const end = hexToRgb(endHex);
+    const amount = clamp(t, 0, 1);
+    const r = Math.round(start.r + ((end.r - start.r) * amount));
+    const g = Math.round(start.g + ((end.g - start.g) * amount));
+    const b = Math.round(start.b + ((end.b - start.b) * amount));
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  function createLinearScale(minValue, maxValue, minOutput, maxOutput) {
+    if (minValue === maxValue) {
+      return () => (minOutput + maxOutput) / 2;
+    }
+    return (value) => {
+      const ratio = (value - minValue) / (maxValue - minValue);
+      return minOutput + ((maxOutput - minOutput) * clamp(ratio, 0, 1));
+    };
+  }
+
+  function createSqrtScale(minValue, maxValue, minOutput, maxOutput) {
+    if (minValue === maxValue) {
+      return () => (minOutput + maxOutput) / 2;
+    }
+    const minRoot = Math.sqrt(Math.max(minValue, 0));
+    const maxRoot = Math.sqrt(Math.max(maxValue, 0));
+    return (value) => {
+      const root = Math.sqrt(Math.max(value, 0));
+      const ratio = (root - minRoot) / Math.max(maxRoot - minRoot, 1e-6);
+      return minOutput + ((maxOutput - minOutput) * clamp(ratio, 0, 1));
+    };
+  }
+
+  function clampDisplayCount(value) {
+    return Math.max(sliderMin, Math.min(sliderMax, Number(value || defaultDisplayCount)));
+  }
+
+  function selectedGraph(displayCount) {
+    const limitedNodes = nodes.slice(0, displayCount);
+    const nodeIds = new Set(limitedNodes.map((node) => node.id));
+    const limitedLinks = links.filter((link) => nodeIds.has(link.source) && nodeIds.has(link.target));
+    return { limitedNodes, limitedLinks };
+  }
+
+  function syncNetworkSummary(displayCount, edgeCount) {
+    if (sliderValue instanceof HTMLElement) {
+      sliderValue.textContent = String(displayCount);
+    }
+    if (hint instanceof HTMLElement) {
+      hint.textContent = `Showing ${displayCount} of the top ${previewNodeCount} ranked ingredients and ${edgeCount} strong links from the wider ${totalNodeCount}-ingredient network. Drag nodes and hover for context.`;
+    }
+  }
+
+  function layoutGraph(simulationNodes, simulationLinks, width, height, radiusScale) {
+    const nodeCount = Math.max(simulationNodes.length, 1);
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const maxOrbit = Math.min(width, height) * 0.42;
+    const ringGap = Math.max(36, Math.min(64, maxOrbit / Math.max(Math.ceil(Math.sqrt(nodeCount)), 1)));
+    const sortedNodes = [...simulationNodes].sort((left, right) => (
+      (right.weighted_degree || 0) - (left.weighted_degree || 0)
+    ));
+
+    let ringIndex = 0;
+    let nodeIndex = 0;
+    while (nodeIndex < sortedNodes.length) {
+      const nodesInRing = ringIndex === 0 ? 1 : Math.min(sortedNodes.length - nodeIndex, 6 * ringIndex);
+      const radius = ringIndex * ringGap;
+      for (let index = 0; index < nodesInRing && nodeIndex < sortedNodes.length; index += 1) {
+        const node = sortedNodes[nodeIndex];
+        node.radius = radiusScale(node.weighted_degree || 1);
+        if (ringIndex === 0) {
+          node.x = centerX;
+          node.y = centerY;
+        } else {
+          const angle = ((Math.PI * 2) / nodesInRing) * index - (Math.PI / 2) + (ringIndex * 0.14);
+          node.x = centerX + (Math.cos(angle) * radius);
+          node.y = centerY + (Math.sin(angle) * radius);
+        }
+        node.x = clamp(node.x, node.radius + 24, width - node.radius - 24);
+        node.y = clamp(node.y, node.radius + 24, height - node.radius - 24);
+        nodeIndex += 1;
+      }
+      ringIndex += 1;
+    }
+  }
+
+  function render(displayCount) {
+    activeDrag = null;
+    tooltip.hidden = true;
+    canvas.innerHTML = "";
+    const width = Math.max(canvas.clientWidth || 0, 720);
+    const height = Math.max(Math.round(width * 0.62), 520);
+    const { limitedNodes, limitedLinks } = selectedGraph(displayCount);
+    syncNetworkSummary(displayCount, limitedLinks.length);
+
+    const simulationNodes = limitedNodes.map((node) => ({
+      ...node,
+      x: Number.isFinite(Number(node.x)) ? Number(node.x) : undefined,
+      y: Number.isFinite(Number(node.y)) ? Number(node.y) : undefined,
+      frequency: Number(node.frequency || 0),
+      degree_centrality: Number(node.degree_centrality || 0),
+      weighted_degree: Number(node.weighted_degree || 0),
+      closeness_centrality: Number(node.closeness_centrality || 0),
+      weighted_closeness: Number(node.weighted_closeness || 0),
+    }));
+    const simulationLinks = limitedLinks.map((link) => ({
+      ...link,
+      value: Number(link.value || 0),
+    }));
+    const weightValues = simulationNodes.map((node) => node.weighted_degree || 0);
+    const frequencyValues = simulationNodes.map((node) => node.frequency || 0);
+    const linkValues = simulationLinks.map((link) => link.value || 0);
+    const minWeight = Math.max(Math.min(...weightValues), 1);
+    const maxWeight = Math.max(Math.max(...weightValues), 1);
+    const minFrequency = Math.max(Math.min(...frequencyValues), 1);
+    const maxFrequency = Math.max(Math.max(...frequencyValues), 1);
+    const minLink = linkValues.length > 0 ? Math.max(Math.min(...linkValues), 1) : 1;
+    const maxLink = linkValues.length > 0 ? Math.max(Math.max(...linkValues), 1) : 1;
+    const sizeScale = createSqrtScale(minWeight, maxWeight, 9, 28);
+    const colorRatioScale = createLinearScale(minFrequency, maxFrequency, 0, 1);
+    const strokeScale = createLinearScale(minLink, maxLink, 1.2, 5.2);
+
+    const neighborMap = new Map();
+    for (const node of simulationNodes) {
+      neighborMap.set(node.id, new Set([node.id]));
+    }
+    for (const link of simulationLinks) {
+      neighborMap.get(link.source)?.add(link.target);
+      neighborMap.get(link.target)?.add(link.source);
+    }
+
+    layoutGraph(simulationNodes, simulationLinks, width, height, sizeScale);
+
+    const svg = createSvgElement("svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("width", String(width));
+    svg.setAttribute("height", String(height));
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svg.setAttribute("class", "ingredient-network__svg");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", canvas.getAttribute("aria-label") || "Interactive ingredient network");
+    canvas.appendChild(svg);
+
+    const linkLayer = createSvgElement("g");
+    linkLayer.setAttribute("class", "ingredient-network__links");
+    svg.appendChild(linkLayer);
+
+    const labelLayer = createSvgElement("g");
+    labelLayer.setAttribute("class", "ingredient-network__labels");
+    svg.appendChild(labelLayer);
+
+    const nodeLayer = createSvgElement("g");
+    nodeLayer.setAttribute("class", "ingredient-network__nodes");
+    svg.appendChild(nodeLayer);
+
+    const nodeElements = new Map();
+    const labelElements = new Map();
+    const linkElements = [];
+
+    for (const edge of simulationLinks) {
+      const line = createSvgElement("line");
+      line.setAttribute("stroke", "#8b7555");
+      line.setAttribute("stroke-opacity", "0.28");
+      line.setAttribute("stroke-width", String(strokeScale(edge.value || 1)));
+      lineLayer.appendChild(line);
+      linkElements.push({ edge, element: line });
+    }
+
+    for (const item of simulationNodes) {
+      const circle = createSvgElement("circle");
+      circle.setAttribute("r", String(sizeScale(item.weighted_degree || 1)));
+      circle.setAttribute("fill", interpolateColor("#d6c1a0", "#b15c2f", colorRatioScale(item.frequency || 1)));
+      circle.setAttribute("fill-opacity", "0.92");
+      circle.setAttribute("stroke", "#fffaf2");
+      circle.setAttribute("stroke-width", "2.2");
+      circle.style.cursor = "grab";
+      nodeLayer.appendChild(circle);
+      nodeElements.set(item.id, circle);
+
+      const label = createSvgElement("text");
+      label.textContent = item.label || item.id;
+      label.setAttribute("font-size", sizeScale(item.weighted_degree || 1) >= 17 ? "14" : "12");
+      label.setAttribute("font-weight", sizeScale(item.weighted_degree || 1) >= 20 ? "700" : "600");
+      label.setAttribute("fill", "#3b3329");
+      label.setAttribute("pointer-events", "none");
+      labelLayer.appendChild(label);
+      labelElements.set(item.id, label);
+    }
+
+    function syncPositions() {
+      for (const { edge, element } of linkElements) {
+        const source = simulationNodes.find((node) => node.id === edge.source);
+        const target = simulationNodes.find((node) => node.id === edge.target);
+        if (!source || !target) {
+          continue;
+        }
+        element.setAttribute("x1", String(source.x));
+        element.setAttribute("y1", String(source.y));
+        element.setAttribute("x2", String(target.x));
+        element.setAttribute("y2", String(target.y));
+      }
+
+      for (const item of simulationNodes) {
+        const circle = nodeElements.get(item.id);
+        const label = labelElements.get(item.id);
+        if (circle) {
+          circle.setAttribute("cx", String(item.x));
+          circle.setAttribute("cy", String(item.y));
+        }
+        if (label) {
+          label.setAttribute("x", String(item.x + item.radius + 8));
+          label.setAttribute("y", String(item.y + 4));
+        }
+      }
+    }
+
+    function updateHighlight(activeNode = null) {
+      const activeNeighbors = activeNode ? neighborMap.get(activeNode.id) || new Set([activeNode.id]) : null;
+      for (const item of simulationNodes) {
+        const opacity = !activeNeighbors || activeNeighbors.has(item.id) ? "1" : "0.2";
+        nodeElements.get(item.id)?.setAttribute("opacity", opacity);
+        labelElements.get(item.id)?.setAttribute("opacity", !activeNeighbors || activeNeighbors.has(item.id) ? "1" : "0.22");
+      }
+      for (const { edge, element } of linkElements) {
+        if (!activeNeighbors || !activeNode) {
+          element.setAttribute("stroke-opacity", "0.28");
+          continue;
+        }
+        element.setAttribute("stroke-opacity", edge.source === activeNode.id || edge.target === activeNode.id ? "0.8" : "0.08");
+      }
+    }
+
+    function showTooltip(event, item) {
+      tooltip.hidden = false;
+      tooltip.innerHTML = `
+        <strong>${escapeIngredientNetworkText(item.label || item.id)}</strong>
+        <span>Weighted connectivity: ${Math.round(item.weighted_degree || 0)}</span>
+        <span>Recipe frequency: ${Math.round(item.frequency || 0)}</span>
+        <span>Closeness: ${(item.closeness_centrality || 0).toFixed(3)}</span>
+      `;
+      const bounds = container.getBoundingClientRect();
+      tooltip.style.left = `${event.clientX - bounds.left + 16}px`;
+      tooltip.style.top = `${event.clientY - bounds.top + 16}px`;
+    }
+
+    function hideTooltip() {
+      tooltip.hidden = true;
+    }
+
+    for (const item of simulationNodes) {
+      const circle = nodeElements.get(item.id);
+      if (!circle) {
+        continue;
+      }
+
+      circle.addEventListener("mouseenter", (event) => {
+        updateHighlight(item);
+        showTooltip(event, item);
+      });
+      circle.addEventListener("mousemove", (event) => {
+        showTooltip(event, item);
+      });
+      circle.addEventListener("mouseleave", () => {
+        if (activeDrag?.id === item.id) {
+          return;
+        }
+        updateHighlight();
+        hideTooltip();
+      });
+      circle.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        activeDrag = {
+          id: item.id,
+          pointerId: event.pointerId,
+        };
+        circle.setPointerCapture(event.pointerId);
+        circle.style.cursor = "grabbing";
+        updateHighlight(item);
+        showTooltip(event, item);
+      });
+      circle.addEventListener("pointermove", (event) => {
+        if (!activeDrag || activeDrag.id !== item.id || activeDrag.pointerId !== event.pointerId) {
+          return;
+        }
+        const bounds = svg.getBoundingClientRect();
+        const scaleX = width / Math.max(bounds.width, 1);
+        const scaleY = height / Math.max(bounds.height, 1);
+        item.x = clamp((event.clientX - bounds.left) * scaleX, item.radius + 24, width - item.radius - 24);
+        item.y = clamp((event.clientY - bounds.top) * scaleY, item.radius + 24, height - item.radius - 24);
+        syncPositions();
+        showTooltip(event, item);
+      });
+      circle.addEventListener("pointerup", (event) => {
+        if (!activeDrag || activeDrag.id !== item.id || activeDrag.pointerId !== event.pointerId) {
+          return;
+        }
+        activeDrag = null;
+        circle.releasePointerCapture(event.pointerId);
+        circle.style.cursor = "grab";
+        hideTooltip();
+        updateHighlight();
+      });
+      circle.addEventListener("pointercancel", (event) => {
+        if (!activeDrag || activeDrag.id !== item.id || activeDrag.pointerId !== event.pointerId) {
+          return;
+        }
+        activeDrag = null;
+        circle.style.cursor = "grab";
+        hideTooltip();
+        updateHighlight();
+      });
+    }
+
+    syncPositions();
+    canvas.hidden = false;
+    if (fallback instanceof HTMLElement) {
+      fallback.hidden = true;
+    }
+  }
+
+  function scheduleRender(nextDisplayCount) {
+    currentDisplayCount = clampDisplayCount(nextDisplayCount);
+    if (slider instanceof HTMLInputElement) {
+      slider.value = String(currentDisplayCount);
+    }
+    if (pendingFrame !== null) {
+      window.cancelAnimationFrame(pendingFrame);
+    }
+    pendingFrame = window.requestAnimationFrame(() => {
+      pendingFrame = null;
+      try {
+        render(currentDisplayCount);
+      } catch (error) {
+        console.error(error);
+        canvas.innerHTML = "";
+        canvas.hidden = true;
+        if (controls instanceof HTMLElement) {
+          controls.hidden = false;
+        }
+        if (fallback instanceof HTMLElement) {
+          fallback.hidden = false;
+        }
+      }
+    });
+  }
+
+  if (controls instanceof HTMLElement) {
+    controls.hidden = sliderMax <= sliderMin;
+  }
+  if (slider instanceof HTMLInputElement) {
+    slider.min = String(sliderMin);
+    slider.max = String(sliderMax);
+    slider.step = String(sliderStep);
+    slider.value = String(defaultDisplayCount);
+    slider.addEventListener("input", () => {
+      scheduleRender(slider.value);
+    });
+  }
+
+  scheduleRender(defaultDisplayCount);
+
+  if (typeof ResizeObserver === "function") {
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleRender(currentDisplayCount);
+    });
+    resizeObserver.observe(canvas);
+  }
+}
+
+function initIngredientNetworkD3() {
+  const container = document.querySelector("[data-ingredient-network]");
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+
+  const canvas = container.querySelector("[data-ingredient-network-canvas]");
+  const fallback = container.querySelector("[data-ingredient-network-fallback]");
+  const controls = container.querySelector("[data-ingredient-network-controls]");
+  const slider = container.querySelector("[data-ingredient-network-slider]");
+  const sliderValue = container.querySelector("[data-ingredient-network-slider-value]");
+  const hint = container.querySelector("[data-ingredient-network-hint]");
+  const payloadNode = container.querySelector("[data-network-payload]");
+  if (!(canvas instanceof HTMLElement)) {
+    return;
+  }
+
+  let payload = null;
+  try {
+    payload = JSON.parse(payloadNode?.textContent || "{}");
+  } catch (error) {
+    console.error(error);
+  }
+
+  const allNodes = Array.isArray(payload?.nodes) ? payload.nodes : [];
+  const allLinks = Array.isArray(payload?.links) ? payload.links : [];
+  if (typeof window.d3 !== "object" || allNodes.length === 0 || allLinks.length === 0) {
+    canvas.hidden = true;
+    if (controls instanceof HTMLElement) {
+      controls.hidden = typeof window.d3 !== "object";
+    }
+    if (fallback instanceof HTMLElement) {
+      fallback.hidden = false;
+    }
+    return;
+  }
+
+  const d3 = window.d3;
+  const previewNodeCount = allNodes.length;
+  const totalNodeCount = Math.max(Number(payload?.node_count || 0), previewNodeCount);
+  const sliderMin = Math.min(
+    previewNodeCount,
+    Math.max(1, Number(payload?.slider_min_node_count || Math.min(previewNodeCount, 20))),
+  );
+  const sliderMax = Math.min(
+    previewNodeCount,
+    Math.max(sliderMin, Number(payload?.slider_max_node_count || previewNodeCount)),
+  );
+  const sliderStep = Math.max(1, Number(payload?.slider_step || (sliderMax <= 40 ? 1 : 5)));
+  const defaultDisplayCount = Math.max(
+    sliderMin,
+    Math.min(sliderMax, Number(payload?.default_display_node_count || sliderMax)),
+  );
+  let currentDisplayCount = defaultDisplayCount;
+  let activeSimulation = null;
+  let pendingFrame = null;
+
+  const tooltip = document.createElement("div");
+  tooltip.className = "ingredient-network__tooltip";
+  tooltip.hidden = true;
+  container.appendChild(tooltip);
+
+  function escapeIngredientNetworkText(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function clampDisplayCount(value) {
+    return Math.max(sliderMin, Math.min(sliderMax, Number(value || defaultDisplayCount)));
+  }
+
+  function selectedGraph(displayCount) {
+    const nodes = allNodes.slice(0, displayCount);
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const links = allLinks.filter((link) => nodeIds.has(link.source) && nodeIds.has(link.target));
+    return { nodes, links };
+  }
+
+  function syncNetworkSummary(displayCount, edgeCount) {
+    if (sliderValue instanceof HTMLElement) {
+      sliderValue.textContent = String(displayCount);
+    }
+    if (hint instanceof HTMLElement) {
+      hint.textContent = `Showing ${displayCount} of the top ${previewNodeCount} ranked ingredients and ${edgeCount} strong links from the wider ${totalNodeCount}-ingredient network. Drag nodes and hover for context.`;
+    }
+  }
+
+  function render(displayCount) {
+    activeSimulation?.stop();
+    tooltip.hidden = true;
+    canvas.innerHTML = "";
+
+    const width = Math.max(canvas.clientWidth || 0, 720);
+    const height = Math.max(Math.round(width * 0.62), 520);
+    const graph = selectedGraph(displayCount);
+    syncNetworkSummary(displayCount, graph.links.length);
+
+    const nodes = graph.nodes.map((node) => ({
+      ...node,
+      x: Number.isFinite(Number(node.x)) ? Number(node.x) : undefined,
+      y: Number.isFinite(Number(node.y)) ? Number(node.y) : undefined,
+      frequency: Number(node.frequency || 0),
+      degree_centrality: Number(node.degree_centrality || 0),
+      weighted_degree: Number(node.weighted_degree || 0),
+      closeness_centrality: Number(node.closeness_centrality || 0),
+      weighted_closeness: Number(node.weighted_closeness || 0),
+    }));
+    const links = graph.links.map((link) => ({
+      ...link,
+      value: Number(link.value || 0),
+    }));
+
+    const weightExtent = d3.extent(nodes, (node) => node.weighted_degree);
+    const sizeScale = d3
+      .scaleSqrt()
+      .domain([Math.max(weightExtent[0] || 1, 1), Math.max(weightExtent[1] || 1, 1)])
+      .range([9, 28]);
+    const frequencyExtent = d3.extent(nodes, (node) => node.frequency);
+    const colorScale = d3
+      .scaleLinear()
+      .domain([Math.max(frequencyExtent[0] || 1, 1), Math.max(frequencyExtent[1] || 1, 1)])
+      .range(["#d6c1a0", "#b15c2f"]);
+    const linkExtent = d3.extent(links, (link) => link.value);
+    const strokeScale = d3
+      .scaleLinear()
+      .domain([Math.max(linkExtent[0] || 1, 1), Math.max(linkExtent[1] || 1, 1)])
+      .range([1.2, 5.2]);
+
+    const neighborMap = new Map();
+    for (const node of nodes) {
+      neighborMap.set(node.id, new Set([node.id]));
+    }
+    for (const link of links) {
+      neighborMap.get(link.source)?.add(link.target);
+      neighborMap.get(link.target)?.add(link.source);
+    }
+
+    const svg = d3
+      .select(canvas)
+      .append("svg")
+      .attr("viewBox", `0 0 ${width} ${height}`)
+      .attr("class", "ingredient-network__svg")
+      .attr("role", "img")
+      .attr("aria-label", canvas.getAttribute("aria-label") || "Interactive ingredient network");
+    const root = svg.append("g");
+
+    svg.call(
+      d3.zoom().scaleExtent([0.7, 2.8]).on("zoom", (event) => {
+        root.attr("transform", event.transform);
+      }),
+    );
+
+    const link = root
+      .append("g")
+      .attr("class", "ingredient-network__links")
+      .selectAll("line")
+      .data(links)
+      .join("line")
+      .attr("stroke", "#8b7555")
+      .attr("stroke-opacity", 0.28)
+      .attr("stroke-width", (edge) => strokeScale(edge.value));
+
+    const node = root
+      .append("g")
+      .attr("class", "ingredient-network__nodes")
+      .selectAll("circle")
+      .data(nodes)
+      .join("circle")
+      .attr("r", (item) => sizeScale(item.weighted_degree || 1))
+      .attr("fill", (item) => colorScale(item.frequency || 1))
+      .attr("fill-opacity", 0.92)
+      .attr("stroke", "#fffaf2")
+      .attr("stroke-width", 2.2)
+      .style("cursor", "grab");
+
+    const labels = root
+      .append("g")
+      .attr("class", "ingredient-network__labels")
+      .selectAll("text")
+      .data(nodes)
+      .join("text")
+      .text((item) => item.label || item.id)
+      .attr("font-size", (item) => (sizeScale(item.weighted_degree || 1) >= 17 ? 14 : 12))
+      .attr("font-weight", (item) => (sizeScale(item.weighted_degree || 1) >= 20 ? 700 : 600))
+      .attr("fill", "#3b3329")
+      .style("pointer-events", "none");
+
+    function updateHighlight(activeNode = null) {
+      const activeNeighbors = activeNode ? neighborMap.get(activeNode.id) || new Set([activeNode.id]) : null;
+      node.attr("opacity", (item) => (!activeNeighbors || activeNeighbors.has(item.id) ? 1 : 0.2));
+      labels.attr("opacity", (item) => (!activeNeighbors || activeNeighbors.has(item.id) ? 1 : 0.22));
+      link.attr("stroke-opacity", (edge) => {
+        if (!activeNeighbors || !activeNode) {
+          return 0.28;
+        }
+        const sourceId = typeof edge.source === "object" ? edge.source.id : edge.source;
+        const targetId = typeof edge.target === "object" ? edge.target.id : edge.target;
+        return sourceId === activeNode.id || targetId === activeNode.id ? 0.8 : 0.08;
+      });
+    }
+
+    function showTooltip(event, item) {
+      tooltip.hidden = false;
+      tooltip.innerHTML = `
+        <strong>${escapeIngredientNetworkText(item.label || item.id)}</strong>
+        <span>Weighted connectivity: ${Math.round(item.weighted_degree || 0)}</span>
+        <span>Recipe frequency: ${Math.round(item.frequency || 0)}</span>
+        <span>Closeness: ${(item.closeness_centrality || 0).toFixed(3)}</span>
+      `;
+      const bounds = container.getBoundingClientRect();
+      tooltip.style.left = `${event.clientX - bounds.left + 16}px`;
+      tooltip.style.top = `${event.clientY - bounds.top + 16}px`;
+    }
+
+    function hideTooltip() {
+      tooltip.hidden = true;
+    }
+
+    const drag = d3
+      .drag()
+      .on("start", (event, item) => {
+        if (!event.active) {
+          simulation.alphaTarget(0.24).restart();
+        }
+        item.fx = item.x;
+        item.fy = item.y;
+      })
+      .on("drag", (event, item) => {
+        item.fx = event.x;
+        item.fy = event.y;
+      })
+      .on("end", (event, item) => {
+        if (!event.active) {
+          simulation.alphaTarget(0);
+        }
+        item.fx = null;
+        item.fy = null;
+      });
+
+    node
+      .call(drag)
+      .on("mouseenter", (event, item) => {
+        updateHighlight(item);
+        showTooltip(event, item);
+      })
+      .on("mousemove", (event, item) => {
+        showTooltip(event, item);
+      })
+      .on("mouseleave", () => {
+        updateHighlight();
+        hideTooltip();
+      });
+
+    const simulation = d3
+      .forceSimulation(nodes)
+      .force(
+        "link",
+        d3
+          .forceLink(links)
+          .id((item) => item.id)
+          .distance((edge) => Math.max(44, 170 - (edge.value * 0.32)))
+          .strength((edge) => Math.min(0.92, 0.16 + (edge.value / Math.max(linkExtent[1] || 1, 1)) * 0.58)),
+      )
+      .force("charge", d3.forceManyBody().strength((item) => -120 - (sizeScale(item.weighted_degree || 1) * 14)))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collision", d3.forceCollide().radius((item) => sizeScale(item.weighted_degree || 1) + 18))
+      .force("x", d3.forceX(width / 2).strength(0.04))
+      .force("y", d3.forceY(height / 2).strength(0.05))
+      .on("tick", () => {
+        link
+          .attr("x1", (edge) => edge.source.x)
+          .attr("y1", (edge) => edge.source.y)
+          .attr("x2", (edge) => edge.target.x)
+          .attr("y2", (edge) => edge.target.y);
+
+        node
+          .attr("cx", (item) => item.x)
+          .attr("cy", (item) => item.y);
+
+        labels
+          .attr("x", (item) => item.x + sizeScale(item.weighted_degree || 1) + 8)
+          .attr("y", (item) => item.y + 4);
+      });
+
+    activeSimulation = simulation;
+    canvas.hidden = false;
+    if (fallback instanceof HTMLElement) {
+      fallback.hidden = true;
+    }
+  }
+
+  function scheduleRender(nextDisplayCount) {
+    currentDisplayCount = clampDisplayCount(nextDisplayCount);
+    if (slider instanceof HTMLInputElement) {
+      slider.value = String(currentDisplayCount);
+    }
+    if (pendingFrame !== null) {
+      window.cancelAnimationFrame(pendingFrame);
+    }
+    pendingFrame = window.requestAnimationFrame(() => {
+      pendingFrame = null;
+      try {
+        render(currentDisplayCount);
+      } catch (error) {
+        console.error(error);
+        canvas.innerHTML = "";
+        canvas.hidden = true;
+        if (fallback instanceof HTMLElement) {
+          fallback.hidden = false;
+        }
+      }
+    });
+  }
+
+  if (controls instanceof HTMLElement) {
+    controls.hidden = sliderMax <= sliderMin;
+  }
+  if (slider instanceof HTMLInputElement) {
+    slider.min = String(sliderMin);
+    slider.max = String(sliderMax);
+    slider.step = String(sliderStep);
+    slider.value = String(defaultDisplayCount);
+    slider.addEventListener("input", () => {
+      scheduleRender(slider.value);
+    });
+  }
+
+  scheduleRender(defaultDisplayCount);
+
+  if (typeof ResizeObserver === "function") {
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleRender(currentDisplayCount);
+    });
+    resizeObserver.observe(canvas);
+  }
 }
 
 function uploadFormElements(form) {
@@ -1335,3 +2254,4 @@ document.addEventListener("click", (event) => {
 initRecipeToggles();
 initCookbookToc();
 initMealPlanAutoLink();
+initIngredientNetworkD3();

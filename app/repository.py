@@ -172,6 +172,15 @@ class LibraryRepository:
         ]
         return {"datastores": [status.model_dump() for status in statuses]}
 
+    def load_meal_plan_payload(self) -> str | None:
+        payload = self.redis.get(self.settings.meal_plan_key)
+        if not payload:
+            return None
+        return payload
+
+    def save_meal_plan_payload(self, payload: str) -> None:
+        self.redis.set(self.settings.meal_plan_key, payload)
+
     def upload_cookbook(self, upload: UploadFile, *, collection_slug: str | None = None) -> CookbookItem:
         filename = upload.filename or "untitled"
         extension = Path(filename).suffix.lower().lstrip(".")

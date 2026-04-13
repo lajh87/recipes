@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+from datetime import date, datetime, timedelta
 import json
 from pathlib import Path
 import re
-from typing import TypeAlias
+from typing import Callable, TypeAlias
 from uuid import uuid4
 
+from app.ingredients import ingredient_index_name
 from app.models import RecipeRecord, RecipeReferenceRecord
 
 MONTH_PATTERN = (
@@ -78,6 +81,7 @@ MEAL_LABELS = tuple(label for _slug, label in MEALS)
 MEAL_PLAN_FILENAME = "meal-plan.json"
 LEGACY_MEAL_PLAN_FILENAME = "recipes.txt"
 DEFAULT_IMPORT_WEEK_LIMIT = 4
+REDIS_MEAL_PLAN_SOURCE = "Redis"
 MealPlanRecipe: TypeAlias = RecipeRecord | RecipeReferenceRecord
 
 
@@ -131,11 +135,47 @@ class MealPlanRow:
 
 
 @dataclass(slots=True)
+class ShoppingListRecipeSource:
+    recipe_id: str
+    recipe_title: str
+    use_count: int = 0
+
+    @property
+    def label(self) -> str:
+        if self.use_count > 1:
+            return f"{self.recipe_title} x{self.use_count}"
+        return self.recipe_title
+
+
+@dataclass(slots=True)
+class ShoppingListItem:
+    name: str
+    recipe_sources: list[ShoppingListRecipeSource] = field(default_factory=list)
+    total_uses: int = 0
+
+    @property
+    def recipe_summary(self) -> str:
+        return ", ".join(source.label for source in self.recipe_sources)
+
+
+@dataclass(slots=True)
 class MealPlanWeek:
     id: str
-    title: str
-    entries: list[MealPlanRow]
+    entries: list[MealPlanRow] = field(default_factory=list)
+    start_on: str = ""
     notes: str = ""
+    legacy_title: str = ""
+    shopping_list: list[ShoppingListItem] = field(default_factory=list)
+
+    @property
+    def title(self) -> str:
+        if self.start_on:
+            return format_week_title(self.start_on)
+        return self.legacy_title or "Undated Week"
+
+    @property
+    def date_input_value(self) -> str:
+        return self.start_on
 
     @property
     def linked_slot_count(self) -> int:
@@ -148,6 +188,10 @@ class MealPlanWeek:
     @property
     def planned_slot_count(self) -> int:
         return sum(1 for entry in self.entries if entry.title)
+
+    @property
+    def shopping_item_count(self) -> int:
+        return len(self.shopping_list)
 
 
 @dataclass(slots=True)
@@ -195,23 +239,34 @@ def resolve_legacy_meal_plan_path(base_dir: Path) -> Path | None:
     return next((path for path in candidates if path.exists()), None)
 
 
-def create_blank_document(base_dir: Path) -> MealPlanDocument:
+def create_blank_document(base_dir: Path, *, source_path: str | None = None) -> MealPlanDocument:
     return MealPlanDocument(
         weeks=[create_blank_week()],
-        source_path=_display_path(resolve_meal_plan_path(base_dir), base_dir),
+        source_path=source_path or _display_path(resolve_meal_plan_path(base_dir), base_dir),
     )
 
 
 def create_blank_week(title: str = "New Week") -> MealPlanWeek:
+    start_on = normalize_week_start_value(title)
+    legacy_title = ""
+    if not start_on:
+        cleaned_title = _display_title(title)
+        legacy_title = "" if cleaned_title.lower() == "new week" else cleaned_title
     return MealPlanWeek(
         id=f"week-{uuid4().hex[:8]}",
-        title=title,
+        start_on=start_on,
         entries=[create_blank_row()],
+        legacy_title=legacy_title,
     )
 
 
 def append_blank_week(document: MealPlanDocument) -> None:
-    document.weeks.append(create_blank_week(title=f"Week {len(document.weeks) + 1}"))
+    next_start_on = _next_week_start_on(document.weeks)
+    week = create_blank_week(next_start_on or "New Week")
+    if next_start_on:
+        week.start_on = next_start_on
+        week.legacy_title = ""
+    document.weeks.append(week)
 
 
 def create_blank_row(*, weekday: str = "", meal: str = "") -> MealPlanRow:
@@ -237,12 +292,25 @@ def load_or_import_meal_plan(
     recipes: list[MealPlanRecipe],
     *,
     week_limit: int = DEFAULT_IMPORT_WEEK_LIMIT,
+    source_path: str | None = None,
+    load_payload: Callable[[], str | None] | None = None,
+    save_payload: Callable[[str], None] | None = None,
 ) -> MealPlanDocument:
+    resolved_source_path = source_path or _display_path(resolve_meal_plan_path(base_dir), base_dir)
+    if load_payload:
+        payload = load_payload()
+        if payload:
+            document = meal_plan_from_dict(json.loads(payload), base_dir, source_path=resolved_source_path)
+            hydrate_linked_recipes(document, recipes)
+            return document
+
     plan_path = resolve_meal_plan_path(base_dir)
     if plan_path.exists():
         payload = json.loads(plan_path.read_text(encoding="utf-8"))
-        document = meal_plan_from_dict(payload, base_dir)
+        document = meal_plan_from_dict(payload, base_dir, source_path=resolved_source_path)
         hydrate_linked_recipes(document, recipes)
+        if save_payload:
+            save_payload(meal_plan_json(document))
         return document
 
     legacy_path = resolve_legacy_meal_plan_path(base_dir)
@@ -251,31 +319,46 @@ def load_or_import_meal_plan(
             legacy_path.read_text(encoding="utf-8"),
             recipes,
             base_dir=base_dir,
-            source_path=_display_path(plan_path, base_dir),
+            source_path=resolved_source_path,
             legacy_source_path=_display_path(legacy_path, base_dir),
             week_limit=week_limit,
         )
-        save_meal_plan(base_dir, document)
+        save_meal_plan(base_dir, document, save_payload=save_payload)
         return document
 
-    document = create_blank_document(base_dir)
+    document = create_blank_document(base_dir, source_path=resolved_source_path)
     hydrate_linked_recipes(document, recipes)
     return document
 
 
-def save_meal_plan(base_dir: Path, document: MealPlanDocument) -> None:
+def save_meal_plan(
+    base_dir: Path,
+    document: MealPlanDocument,
+    *,
+    save_payload: Callable[[str], None] | None = None,
+) -> None:
+    payload = meal_plan_json(document)
+    if save_payload:
+        save_payload(payload)
+        return
     path = resolve_meal_plan_path(base_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(meal_plan_to_dict(document), indent=2), encoding="utf-8")
+    path.write_text(payload, encoding="utf-8")
+
+
+def meal_plan_json(document: MealPlanDocument) -> str:
+    return json.dumps(meal_plan_to_dict(document), indent=2)
 
 
 def meal_plan_to_dict(document: MealPlanDocument) -> dict[str, object]:
     return {
-        "version": 1,
+        "version": 2,
         "weeks": [
             {
                 "id": week.id,
-                "title": week.title,
+                "title": week.title if week.start_on else week.legacy_title,
+                "start_on": week.start_on,
+                "legacy_title": week.legacy_title,
                 "notes": week.notes,
                 "entries": [
                     {
@@ -294,7 +377,12 @@ def meal_plan_to_dict(document: MealPlanDocument) -> dict[str, object]:
     }
 
 
-def meal_plan_from_dict(payload: dict[str, object], base_dir: Path) -> MealPlanDocument:
+def meal_plan_from_dict(
+    payload: dict[str, object],
+    base_dir: Path,
+    *,
+    source_path: str | None = None,
+) -> MealPlanDocument:
     weeks_payload = payload.get("weeks")
     weeks: list[MealPlanWeek] = []
     if isinstance(weeks_payload, list):
@@ -307,7 +395,7 @@ def meal_plan_from_dict(payload: dict[str, object], base_dir: Path) -> MealPlanD
 
     return MealPlanDocument(
         weeks=weeks,
-        source_path=_display_path(resolve_meal_plan_path(base_dir), base_dir),
+        source_path=source_path or _display_path(resolve_meal_plan_path(base_dir), base_dir),
     )
 
 
@@ -316,6 +404,7 @@ def parse_meal_plan_form(
     recipes: list[MealPlanRecipe],
     *,
     base_dir: Path,
+    source_path: str | None = None,
 ) -> MealPlanDocument:
     recipe_map = {recipe.id: recipe for recipe in recipes}
     prepared = _prepare_recipes(recipes)
@@ -325,15 +414,19 @@ def parse_meal_plan_form(
     week_ids = list(form.getlist("week_id")) if hasattr(form, "getlist") else []
     document = MealPlanDocument(
         weeks=[],
-        source_path=_display_path(resolve_meal_plan_path(base_dir), base_dir),
+        source_path=source_path or _display_path(resolve_meal_plan_path(base_dir), base_dir),
     )
 
     for raw_week_id in week_ids:
         week_id = str(raw_week_id).strip()
         if not week_id:
             continue
-        week = create_blank_week(title=str(form.get(f"week_title__{week_id}", "")).strip() or "Untitled Week")
+        week_start_on = normalize_week_start_value(str(form.get(f"week_start_on__{week_id}", "")).strip())
+        week_title = str(form.get(f"week_title__{week_id}", "")).strip()
+        week = create_blank_week(title=week_start_on or week_title or "Untitled Week")
         week.id = week_id
+        week.start_on = week_start_on
+        week.legacy_title = _display_title(week_title) if week_title and not week_start_on else ""
         week.notes = str(form.get(f"week_notes__{week_id}", "")).strip()
         week.entries = []
         row_ids = list(form.getlist(f"week_entry_id__{week_id}")) if hasattr(form, "getlist") else []
@@ -350,7 +443,7 @@ def parse_meal_plan_form(
             entry.title = str(form.get(f"{prefix}__title", "")).strip()
             entry.completed = form.get(f"{prefix}__completed") is not None
 
-            recipe_ref = str(form.get(f"{prefix}__recipe_ref", "")).strip()
+            recipe_ref = str(form.get(f"{prefix}__recipe_ref", "")).strip() or entry.title
             recipe_id = str(form.get(f"{prefix}__recipe_id", "")).strip()
             recipe = resolve_recipe_reference(
                 recipe_ref,
@@ -364,6 +457,8 @@ def parse_meal_plan_form(
             if recipe:
                 entry.recipe_id = recipe.id
                 entry.recipe = recipe
+                if not entry.title or entry.title == recipe_option_value(recipe):
+                    entry.title = recipe.title
             week.entries.append(entry)
 
         if not week.entries:
@@ -425,6 +520,51 @@ def hydrate_linked_recipes(document: MealPlanDocument, recipes: list[MealPlanRec
             entry.recipe = recipe_map.get(entry.recipe_id or "")
             if entry.recipe is None:
                 entry.recipe_id = None
+
+
+def build_week_shopping_list(
+    week: MealPlanWeek,
+    recipes: list[RecipeRecord],
+) -> list[ShoppingListItem]:
+    recipe_map = {recipe.id: recipe for recipe in recipes}
+    aggregated: dict[str, ShoppingListItem] = {}
+    source_maps: dict[str, dict[str, ShoppingListRecipeSource]] = defaultdict(dict)
+    label_variants: dict[str, set[str]] = defaultdict(set)
+
+    for entry in week.entries:
+        recipe_id = entry.recipe_id or ""
+        if not recipe_id:
+            continue
+        recipe = recipe_map.get(recipe_id)
+        if recipe is None:
+            continue
+
+        for ingredient_key, ingredient_label in _shopping_ingredients(recipe):
+            item = aggregated.setdefault(ingredient_key, ShoppingListItem(name=ingredient_key))
+            item.total_uses += 1
+            label_variants[ingredient_key].add(ingredient_label)
+            source = source_maps[ingredient_key].get(recipe.id)
+            if source is None:
+                source = ShoppingListRecipeSource(recipe_id=recipe.id, recipe_title=recipe.title)
+                source_maps[ingredient_key][recipe.id] = source
+                item.recipe_sources.append(source)
+            source.use_count += 1
+
+    for item in aggregated.values():
+        variants = {label for label in label_variants.get(item.name, set()) if label}
+        if len(variants) == 1:
+            item.name = next(iter(variants))
+        item.recipe_sources.sort(key=lambda source: source.recipe_title.casefold())
+
+    return sorted(aggregated.values(), key=lambda item: (item.name.casefold(), item.recipe_summary.casefold()))
+
+
+def populate_week_shopping_lists(
+    document: MealPlanDocument,
+    recipes: list[RecipeRecord],
+) -> None:
+    for week in document.weeks:
+        week.shopping_list = build_week_shopping_list(week, recipes)
 
 
 def import_recent_weeks_from_text(
@@ -647,8 +787,16 @@ def _infer_meal_label(entry: MealPlanEntry, default_meal: str) -> str:
 
 
 def _week_from_dict(payload: dict[str, object]) -> MealPlanWeek:
-    week = create_blank_week(title=str(payload.get("title", "")).strip() or "Untitled Week")
+    start_on = normalize_week_start_value(str(payload.get("start_on", "")).strip())
+    raw_title = str(payload.get("title", "")).strip()
+    if raw_title in {"Undated Week", "New Week"}:
+        raw_title = ""
+    legacy_title = str(payload.get("legacy_title", "")).strip()
+    inferred_legacy_title = legacy_title or (raw_title if raw_title and not start_on else "")
+    week = create_blank_week(title=start_on or inferred_legacy_title or "Untitled Week")
     week.id = str(payload.get("id", "")).strip() or week.id
+    week.start_on = start_on
+    week.legacy_title = _display_title(inferred_legacy_title) if inferred_legacy_title and not start_on else ""
     week.notes = str(payload.get("notes", "")).strip()
     week.entries = []
 
@@ -1009,3 +1157,84 @@ def normalize_meal_label(value: str) -> str:
         if cleaned.lower() == label.lower() or cleaned.lower() == _slug:
             return label
     return cleaned
+
+
+def normalize_week_start_value(value: str) -> str:
+    cleaned = _display_title(value)
+    if not cleaned:
+        return ""
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", cleaned):
+        try:
+            return date.fromisoformat(cleaned).isoformat()
+        except ValueError:
+            return ""
+
+    text = re.sub(r"^week(?:\s+\d+)?(?:\s+of)?\s+", "", cleaned, flags=re.IGNORECASE).strip()
+    if not text:
+        return ""
+
+    for fmt in ("%d %b %Y", "%d %B %Y", "%d %b %y", "%d %B %y", "%d %b", "%d %B"):
+        try:
+            parsed = datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+        if "%Y" not in fmt and "%y" not in fmt:
+            parsed = parsed.replace(year=date.today().year)
+        return parsed.isoformat()
+
+    return ""
+
+
+def format_week_title(value: str) -> str:
+    normalized = normalize_week_start_value(value)
+    if not normalized:
+        return _display_title(value)
+    parsed = date.fromisoformat(normalized)
+    return f"Week of {parsed.day} {parsed.strftime('%B %Y')}"
+
+
+def _next_week_start_on(weeks: list[MealPlanWeek]) -> str:
+    for week in reversed(weeks):
+        if not week.start_on:
+            continue
+        return (date.fromisoformat(week.start_on) + timedelta(days=7)).isoformat()
+    return ""
+
+
+def _shopping_ingredients(recipe: RecipeRecord) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    for ingredient in recipe.ingredients:
+        ingredient_key = ingredient_index_name(ingredient)
+        if not ingredient_key:
+            continue
+        items.append((ingredient_key, _shopping_ingredient_label(ingredient, ingredient_key)))
+
+    if items:
+        return items
+
+    return [
+        (name.strip().casefold(), name.strip())
+        for name in recipe.ingredient_names
+        if name.strip()
+    ]
+
+
+def _shopping_ingredient_label(ingredient: RecipeRecord | object, ingredient_key: str) -> str:
+    raw_value = str(getattr(ingredient, "raw", "") or "")
+    if isinstance(ingredient, dict):
+        raw_value = str(ingredient.get("raw", "") or "")
+
+    raw = raw_value.strip()
+    if not raw:
+        return ingredient_key
+
+    normalized_raw = re.sub(r"\s+", " ", raw.casefold())
+    normalized_key = re.sub(r"\s+", " ", ingredient_key.casefold())
+    if normalized_raw == normalized_key:
+        return ingredient_key
+
+    if re.search(r"\d+\.\d+", raw) or "," in raw or re.search(r"\bor\b", raw, re.IGNORECASE) or "/" in raw:
+        return raw
+
+    return ingredient_key

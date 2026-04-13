@@ -77,7 +77,7 @@ The initial UI includes:
 - a meal-plan page linked from the top navigation
 - structured weekly planning with Monday to Sunday rows and breakfast, lunch, and dinner checklists
 - optional linking from each meal slot to a recipe in the library
-- persistence of structured plans in `data-raw/meal-plan.json`
+- Redis-backed autosave for structured meal plans
 - fallback import from the last few week/date sections in `data-raw/recipes.txt` when no structured plan exists yet
 
 ## OpenAI Configuration
@@ -141,7 +141,6 @@ Defaults:
 │       ├── index.html
 │       └── meal_plan.html
 ├── data-raw
-│   ├── meal-plan.json
 │   └── recipes.txt
 ├── docker-compose.yml
 ├── Dockerfile
@@ -151,8 +150,7 @@ Defaults:
 ## Notes
 
 - The app joins the existing Docker network `shared-datastores` and expects the hostnames `minio`, `redis`, and `qdrant`.
-- Redis is used for application records, extraction jobs, ingredient indexes, and review state.
+- Redis is used for application records, extraction jobs, ingredient indexes, review state, and meal-plan storage.
 - Qdrant stores recipe-derived vectors only.
 - The extraction worker currently targets EPUB and text-based PDF. Scan-only OCR is not implemented yet.
-- Structured meal plans are stored in `data-raw/meal-plan.json`.
-- If `data-raw/meal-plan.json` does not exist, the app seeds it from the most recent few dated sections in `data-raw/recipes.txt`.
+- If the Redis meal-plan key is empty, the app first migrates any existing `data-raw/meal-plan.json` document and otherwise seeds from the most recent few dated sections in `data-raw/recipes.txt`.

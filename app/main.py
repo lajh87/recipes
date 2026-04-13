@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.bbc_goodfood_pdf import extract_bbc_goodfood_pdf
-from app.blog import BLOG_POSTS, BLOG_POSTS_BY_SLUG
+from app.blog import BLOG_POSTS, BLOG_POSTS_BY_SLUG, enrich_blog_post
 from app.config import Settings, get_settings
 from app.epub import build_epub_chapter_map, normalize_epub_path
 from app.extractor import OpenAIRecipeExtractor, RecipeDraft
@@ -31,9 +31,11 @@ from app.meal_plan import (
     MealPlanDocument,
     DEFAULT_IMPORT_WEEK_LIMIT,
     MEAL_LABELS,
+    REDIS_MEAL_PLAN_SOURCE,
     WEEKDAY_LABELS,
     append_blank_row,
     append_blank_week,
+    populate_week_shopping_lists,
     load_or_import_meal_plan,
     parse_meal_plan_form,
     recipe_option_value,
@@ -160,15 +162,22 @@ def cookbook_management_groups(cookbooks: list[Any]) -> list[dict[str, Any]]:
 
 
 def load_meal_plan_document(repository: LibraryRepository) -> tuple[MealPlanDocument, list[str]]:
-    recipes = repository.list_recipe_references()
+    recipe_references = repository.list_recipe_references()
     meal_plan = load_or_import_meal_plan(
         BASE_DIR.parent,
-        recipes,
+        recipe_references,
         week_limit=DEFAULT_IMPORT_WEEK_LIMIT,
+        source_path=REDIS_MEAL_PLAN_SOURCE,
+        load_payload=repository.load_meal_plan_payload,
+        save_payload=repository.save_meal_plan_payload,
     )
+    populate_week_shopping_lists(meal_plan, repository.list_recipes())
     recipe_options = [
         recipe_option_value(recipe)
-        for recipe in sorted(recipes, key=lambda item: (item.title.casefold(), item.cookbook_title.casefold()))
+        for recipe in sorted(
+            recipe_references,
+            key=lambda item: (item.title.casefold(), item.cookbook_title.casefold()),
+        )
     ]
     return meal_plan, recipe_options
 
@@ -712,6 +721,10 @@ async def blog_post_page(
     if not post:
         raise HTTPException(status_code=404, detail="Blog post not found.")
 
+    repository = get_repository(request)
+    if post.slug == "mapping-the-ingredient-network":
+        post = enrich_blog_post(post, repository.list_recipes())
+
     context = common_template_context(request, notice=notice)
     context.update({"post": post})
     return templates.TemplateResponse(request=request, name="blog_post.html", context=context)
@@ -723,12 +736,13 @@ async def update_meal_plan_form(
 ) -> Response:
     repository = get_repository(request)
     form = await request.form()
-    planner_action = str(form.get("planner_action", "save")).strip().lower()
+    planner_action = str(form.get("planner_action", "autosave")).strip().lower()
     recipes = repository.list_recipe_references()
     meal_plan = parse_meal_plan_form(
         form,
         recipes,
         base_dir=BASE_DIR.parent,
+        source_path=REDIS_MEAL_PLAN_SOURCE,
     )
 
     if planner_action == "add_week":
@@ -741,7 +755,11 @@ async def update_meal_plan_form(
     elif planner_action.startswith("remove:"):
         remove_week(meal_plan, planner_action.split(":", 1)[1])
 
-    save_meal_plan(BASE_DIR.parent, meal_plan)
+    save_meal_plan(
+        BASE_DIR.parent,
+        meal_plan,
+        save_payload=repository.save_meal_plan_payload,
+    )
 
     if planner_action == "add_week":
         notice_text = "Added a new week."

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,7 @@ def extract_waitrose_pdf(
             raise ValueError("upload does not match the Waitrose PDF template: expected a 2-page recipe PDF.")
         pages = [document.load_page(page_number) for page_number in range(page_count)]
         page_one_blocks = _extract_blocks([pages[0]])
+        all_blocks = _extract_blocks(pages)
         page_two_blocks = _extract_blocks([pages[1]])
         page_two_words = sorted(
             pages[1].get_text("words"),
@@ -65,7 +67,7 @@ def extract_waitrose_pdf(
     title = _extract_title(page_one_blocks) or _fallback_title(filename, cookbook_title)
     intro = _extract_intro(page_one_blocks)
     serves, course, prep_time, cook_time, total_time = _extract_metadata(page_one_blocks)
-    ingredients = _extract_ingredients(page_two_blocks, page_width)
+    ingredients = _extract_ingredients(all_blocks, page_width)
     method_steps = _extract_method_steps(page_two_words, page_two_blocks, page_width)
 
     if not serves or not course:
@@ -158,9 +160,17 @@ def _extract_title(blocks: list[PdfBlock]) -> str:
 
 
 def _extract_intro(blocks: list[PdfBlock]) -> str:
+    metadata_y = min(
+        (
+            block.y0
+            for block in blocks
+            if SERVES_RE.match(block.text.strip()) or COURSE_RE.match(block.text.strip())
+        ),
+        default=620.0,
+    )
     lines: list[str] = []
     for block in blocks:
-        if 460 <= block.y0 <= 620:
+        if 460 <= block.y0 < metadata_y:
             lines.append(block.text.strip())
     return " ".join(lines).strip()
 
@@ -204,23 +214,44 @@ def _extract_metadata(blocks: list[PdfBlock]) -> tuple[str, str, str, str, str]:
 
 
 def _extract_ingredients(blocks: list[PdfBlock], page_width: float) -> list[str]:
-    midpoint = page_width / 2
-    method_y = next(
-        (block.y0 for block in blocks if block.text.strip().lower() == "method"),
-        10_000.0,
-    )
-    lines: list[str] = []
+    midpoint = page_width / 2 if page_width else 0.0
+    started = False
+    ingredient_blocks: list[PdfBlock] = []
     for block in blocks:
         text = block.text.strip()
-        if text.lower() in {"ingredients", "method"}:
+        lowered = text.lower()
+        if not started:
+            if lowered == "ingredients":
+                started = True
             continue
-        if block.y0 <= 60 or block.y0 >= method_y:
+        if lowered == "method":
+            break
+        if lowered in {"nutritional", "ingredients"}:
             continue
-        if block.x0 < 20 or block.x0 > page_width:
+        if text.startswith("Typical values per serving"):
+            break
+        ingredient_blocks.append(block)
+
+    ordered: list[str] = []
+    page_numbers = sorted({block.page_number for block in ingredient_blocks})
+    for page_number in page_numbers:
+        page_blocks = [block for block in ingredient_blocks if block.page_number == page_number]
+        if not midpoint:
+            ordered.extend(block.text for block in sorted(page_blocks, key=lambda item: (item.y0, item.x0)))
             continue
-        if block.x0 < midpoint or block.x0 >= midpoint:
-            lines.append(text)
-    return lines
+
+        left_column = sorted(
+            (block for block in page_blocks if block.x0 < midpoint),
+            key=lambda item: (item.y0, item.x0),
+        )
+        right_column = sorted(
+            (block for block in page_blocks if block.x0 >= midpoint),
+            key=lambda item: (item.y0, item.x0),
+        )
+        ordered.extend(block.text for block in left_column)
+        ordered.extend(block.text for block in right_column)
+
+    return ordered
 
 
 def _extract_method_steps(
@@ -240,28 +271,33 @@ def _extract_method_steps(
         return []
 
     midpoint = page_width / 2
-    columns: dict[int, list[str]] = {1: [], 2: []}
-    current_step: int | None = None
-
+    column_words: dict[int, list[tuple[float, float, str]]] = defaultdict(list)
     for word in words:
-        x0, y0, _x1, _y1, text = float(word[0]), float(word[1]), float(word[2]), float(word[3]), str(word[4])
+        x0, y0, text = float(word[0]), float(word[1]), str(word[4])
         if y0 <= method_block.y0 or y0 >= nutrition_y:
             continue
-        if x0 < midpoint:
-            if text == "1":
-                current_step = 1
-                continue
-            if current_step == 1:
-                columns[1].append(text)
-        else:
-            if text == "2":
-                current_step = 2
-                continue
-            if current_step == 2:
-                columns[2].append(text)
+        column_index = 0 if x0 < midpoint else 1
+        column_words[column_index].append((x0, y0, text))
 
-    steps = [" ".join(columns[index]).strip() for index in (1, 2)]
-    return [step for step in steps if step]
+    steps_by_number: dict[int, list[str]] = {}
+    for column_index in sorted(column_words):
+        column_start = min(x0 for x0, _y0, _text in column_words[column_index])
+        current_step: int | None = None
+        for x0, _y0, text in column_words[column_index]:
+            if text.isdigit() and x0 <= column_start + 24:
+                step_number = int(text)
+                steps_by_number.setdefault(step_number, [])
+                current_step = step_number
+                continue
+            if current_step is None:
+                continue
+            steps_by_number[current_step].append(text)
+
+    return [
+        " ".join(steps_by_number[step_number]).strip()
+        for step_number in sorted(steps_by_number)
+        if " ".join(steps_by_number[step_number]).strip()
+    ]
 
 
 def _ingredient_record(raw: str) -> dict[str, str | bool | None]:

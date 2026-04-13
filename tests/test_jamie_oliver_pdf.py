@@ -68,6 +68,33 @@ def build_jamie_template_pdf(*, include_method: bool = True) -> bytes:
     return pdf_bytes
 
 
+def build_jamie_misaligned_method_pdf() -> bytes:
+    document = fitz.open()
+    document.new_page(width=595, height=842)
+    page_one = document[0]
+
+    page_one.insert_text((60, 40), "SPRING MINESTRONE")
+    page_one.insert_text((140, 135), "1 HOUR")
+    page_one.insert_text((305, 135), "NOT TOO TRICKY")
+    page_one.insert_text((408, 135), "SERVES 6")
+    page_one.insert_text((17, 190), "INGREDIENTS")
+    page_one.insert_text((17, 240), "2 carrots")
+    page_one.insert_text((17, 280), "2 celery sticks")
+    page_one.insert_text((17, 320), "1 litre vegetable stock")
+    page_one.insert_text((237, 190), "METHOD")
+    page_one.insert_text((237, 220), "Hand Mix Method:")
+    page_one.insert_text((255, 240), "Bring a pot of stock to the boil.")
+    page_one.insert_text((237, 243), "1")
+    page_one.insert_text((255, 280), "Add the carrots and celery, then simmer gently.")
+    page_one.insert_text((237, 283), "2")
+    page_one.insert_text((237, 320), "3")
+    page_one.insert_text((255, 317), "Season to taste and serve.")
+
+    pdf_bytes = document.tobytes()
+    document.close()
+    return pdf_bytes
+
+
 class JamieOliverPdfTests(unittest.TestCase):
     def test_extracts_jamie_oliver_template_pdf(self) -> None:
         result = extract_jamie_oliver_pdf(
@@ -90,7 +117,37 @@ class JamieOliverPdfTests(unittest.TestCase):
         )
         self.assertEqual(len(result.drafts[0].method_steps), 7)
         self.assertIn("Top Tip", result.drafts[0].source["metadata"]["supplemental_sections"][0]["heading"])
-        self.assertIn("Hand Mix Method", result.drafts[0].source["metadata"]["preparation_notes"][1])
+        self.assertEqual(
+            result.drafts[0].source["metadata"]["preparation_notes"],
+            [
+                "Place the flour, yeast, sugar and salt into the bowl. Then follow the recipe from step 2, below.",
+                "Hand Mix Method Place the flour and sugar in a large bowl. Knead until you have a silky dough.",
+                "Free-Standing Mixer Method",
+            ],
+        )
+
+    def test_extracts_misaligned_jamie_oliver_method_rows(self) -> None:
+        result = extract_jamie_oliver_pdf(
+            cookbook_title="Spring minestrone | Jamie Oliver recipes",
+            filename="Spring minestrone | Jamie Oliver recipes.pdf",
+            object_key="ebooks/spring-minestrone.pdf",
+            content_type="application/pdf",
+            file_bytes=build_jamie_misaligned_method_pdf(),
+        )
+
+        self.assertEqual(result.title, "Spring Minestrone")
+        self.assertEqual(
+            result.drafts[0].method_steps,
+            [
+                "Bring a pot of stock to the boil.",
+                "Add the carrots and celery, then simmer gently.",
+                "Season to taste and serve.",
+            ],
+        )
+        self.assertEqual(
+            result.drafts[0].source["metadata"]["preparation_notes"],
+            ["Hand Mix Method"],
+        )
 
     def test_rejects_pdf_without_method_template_section(self) -> None:
         with self.assertRaisesRegex(ValueError, "expected a METHOD section with numbered steps"):

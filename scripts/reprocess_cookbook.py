@@ -3,9 +3,151 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, datetime
 
+from app.bbc_goodfood_pdf import extract_bbc_goodfood_pdf
 from app.config import get_settings
 from app.extractor import OpenAIRecipeExtractor, RecipeDraft
+from app.jamie_oliver_pdf import extract_jamie_oliver_pdf
+from app.nytimes_pdf import extract_nytimes_pdf
 from app.repository import LibraryRepository
+from app.waitrose_pdf import extract_waitrose_pdf
+
+
+def _build_recipe_embeddings(
+    settings,
+    drafts: list[RecipeDraft],
+    *,
+    embedding_batch_size: int,
+) -> list[list[float]]:
+    if not drafts or not settings.openai_api_key:
+        return []
+
+    try:
+        extractor = OpenAIRecipeExtractor(settings)
+        embeddings: list[list[float]] = []
+        texts = [draft.embedding_text() for draft in drafts]
+        for start in range(0, len(texts), embedding_batch_size):
+            batch = texts[start : start + embedding_batch_size]
+            embeddings.extend(extractor.build_embeddings(batch))
+            print(
+                f"[{datetime.now(UTC).isoformat()}] embeddings "
+                f"{min(start + len(batch), len(texts))}/{len(texts)}",
+                flush=True,
+            )
+        return embeddings
+    except Exception as exc:
+        print(f"[{datetime.now(UTC).isoformat()}] embeddings skipped: {exc}", flush=True)
+        return []
+
+
+def _reprocess_collection_pdf(
+    repository: LibraryRepository,
+    settings,
+    cookbook,
+    file_bytes: bytes,
+    *,
+    embedding_batch_size: int,
+) -> bool:
+    if cookbook.collection_slug == "nytimes":
+        parsed = extract_nytimes_pdf(
+            cookbook_title=cookbook.title,
+            filename=cookbook.filename,
+            object_key=cookbook.object_key,
+            content_type=cookbook.content_type,
+            file_bytes=file_bytes,
+        )
+        repository.update_cookbook_metadata(
+            cookbook.id,
+            title=parsed.title,
+            author=parsed.author,
+            published_at=parsed.published_at,
+        )
+        embeddings = _build_recipe_embeddings(
+            settings,
+            parsed.drafts,
+            embedding_batch_size=embedding_batch_size,
+        )
+        repository.store_extracted_recipes(cookbook.id, parsed.drafts, embeddings)
+        print(
+            f"[{datetime.now(UTC).isoformat()}] stored drafts={len(parsed.drafts)} cookbook_id={cookbook.id}",
+            flush=True,
+        )
+        return True
+
+    if cookbook.collection_slug == "jamie-oliver":
+        parsed = extract_jamie_oliver_pdf(
+            cookbook_title=cookbook.title,
+            filename=cookbook.filename,
+            object_key=cookbook.object_key,
+            content_type=cookbook.content_type,
+            file_bytes=file_bytes,
+        )
+        repository.update_cookbook_metadata(
+            cookbook.id,
+            title=parsed.title,
+            author=parsed.author,
+        )
+        embeddings = _build_recipe_embeddings(
+            settings,
+            parsed.drafts,
+            embedding_batch_size=embedding_batch_size,
+        )
+        repository.store_extracted_recipes(cookbook.id, parsed.drafts, embeddings)
+        print(
+            f"[{datetime.now(UTC).isoformat()}] stored drafts={len(parsed.drafts)} cookbook_id={cookbook.id}",
+            flush=True,
+        )
+        return True
+
+    if cookbook.collection_slug == "bbc-goodfood":
+        parsed = extract_bbc_goodfood_pdf(
+            cookbook_title=cookbook.title,
+            filename=cookbook.filename,
+            object_key=cookbook.object_key,
+            content_type=cookbook.content_type,
+            file_bytes=file_bytes,
+        )
+        repository.update_cookbook_metadata(
+            cookbook.id,
+            title=parsed.title,
+            author=parsed.author,
+        )
+        embeddings = _build_recipe_embeddings(
+            settings,
+            parsed.drafts,
+            embedding_batch_size=embedding_batch_size,
+        )
+        repository.store_extracted_recipes(cookbook.id, parsed.drafts, embeddings)
+        print(
+            f"[{datetime.now(UTC).isoformat()}] stored drafts={len(parsed.drafts)} cookbook_id={cookbook.id}",
+            flush=True,
+        )
+        return True
+
+    if cookbook.collection_slug == "waitrose-recipes":
+        parsed = extract_waitrose_pdf(
+            cookbook_title=cookbook.title,
+            filename=cookbook.filename,
+            object_key=cookbook.object_key,
+            content_type=cookbook.content_type,
+            file_bytes=file_bytes,
+        )
+        repository.update_cookbook_metadata(
+            cookbook.id,
+            title=parsed.title,
+        )
+        embeddings = _build_recipe_embeddings(
+            settings,
+            parsed.drafts,
+            embedding_batch_size=embedding_batch_size,
+        )
+        repository.store_extracted_recipes(cookbook.id, parsed.drafts, embeddings)
+        print(
+            f"[{datetime.now(UTC).isoformat()}] stored drafts={len(parsed.drafts)} cookbook_id={cookbook.id}",
+            flush=True,
+        )
+        return True
+
+    return False
 
 
 def reprocess_cookbook(
@@ -16,7 +158,6 @@ def reprocess_cookbook(
 ) -> None:
     settings = get_settings()
     repository = LibraryRepository.from_settings(settings)
-    extractor = OpenAIRecipeExtractor(settings)
 
     try:
         cookbook = repository.get_cookbook(cookbook_id)
@@ -27,6 +168,7 @@ def reprocess_cookbook(
         append_anchor_set = {anchor.strip() for anchor in (append_anchors or []) if anchor.strip()}
 
         if append_anchor_set:
+            extractor = OpenAIRecipeExtractor(settings)
             sections = extractor._extract_epub_sections(file_bytes)
             section_map = {section.anchor or section.section_key: section for section in sections}
             candidates = [
@@ -103,6 +245,16 @@ def reprocess_cookbook(
             return
 
         repository.mark_cookbook_processing(cookbook_id)
+        if _reprocess_collection_pdf(
+            repository,
+            settings,
+            cookbook,
+            file_bytes,
+            embedding_batch_size=embedding_batch_size,
+        ):
+            return
+
+        extractor = OpenAIRecipeExtractor(settings)
         result = extractor.extract_cookbook(
             cookbook_title=cookbook.title,
             filename=cookbook.filename,

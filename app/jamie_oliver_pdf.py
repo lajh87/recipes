@@ -20,6 +20,7 @@ INLINE_STEP_RE = re.compile(r"^(?P<heading>[A-Z][A-Z0-9 &/'().-]+:?)\s+(?P<numbe
 UPPERCASE_HEADING_RE = re.compile(r"^[A-Z][A-Z0-9 &/'().-]+:?$")
 TIME_RE = re.compile(r"\b(?:\d+\s*(?:mins?|minutes?|hours?))\b", re.IGNORECASE)
 MAKES_RE = re.compile(r"^(?:MAKES|SERVES)\s+(?P<value>.+)$", re.IGNORECASE)
+EMBEDDED_STEP_RE = re.compile(r"^(?:(?P<number>\d+)\s+(?P<leading>.+)|(?P<trailing>.+?)\s+(?P<number_tail>\d+))$")
 
 
 @dataclass(frozen=True)
@@ -279,11 +280,10 @@ def _extract_method_content(blocks: list[PdfBlock], split: float) -> tuple[list[
     current_step: list[str] = []
     pre_step_lines: list[str] = []
     step_started = False
+    method_blocks: list[PdfBlock] = []
 
     for block in blocks:
-        if block.page_number == 1 and block.x0 < split:
-            continue
-        if block.page_number > 1 and block.x0 < split:
+        if block.x0 < split:
             continue
 
         text = " ".join(block.text.split())
@@ -292,30 +292,85 @@ def _extract_method_content(blocks: list[PdfBlock], split: float) -> tuple[list[
                 started = True
             continue
 
-        inline_step = INLINE_STEP_RE.match(text)
+        method_blocks.append(PdfBlock(block.page_number, block.x0, block.y0, text))
+
+    for row_blocks in _group_method_rows(method_blocks):
+        texts = [block.text for block in row_blocks]
+        inline_step = next((INLINE_STEP_RE.match(text) for text in texts if INLINE_STEP_RE.match(text)), None)
+        embedded_step = next((candidate for text in texts if (candidate := _extract_embedded_step(text))), None)
         if inline_step:
             if current_step:
                 steps.append(" ".join(current_step).strip())
             current_step = []
+            pre_step_lines.append(_display_text(inline_step.group("heading").rstrip(":")))
             step_started = True
-            continue
-
-        if STEP_NUMBER_RE.match(text):
+        elif embedded_step:
             if current_step:
                 steps.append(" ".join(current_step).strip())
             current_step = []
             step_started = True
+        elif any(STEP_NUMBER_RE.match(text) for text in texts):
+            if current_step:
+                steps.append(" ".join(current_step).strip())
+            current_step = []
+            step_started = True
+
+        row_text_parts = [
+            text
+            for text in texts
+            if not STEP_NUMBER_RE.match(text) and not INLINE_STEP_RE.match(text)
+        ]
+        if embedded_step:
+            row_text_parts = [embedded_step]
+        row_text = " ".join(row_text_parts).strip()
+        if not row_text:
+            continue
+        if _is_preparation_heading(row_text):
+            if current_step:
+                steps.append(" ".join(current_step).strip())
+                current_step = []
+            step_started = False
+            pre_step_lines.append(_display_text(row_text.rstrip(":")))
             continue
 
         if step_started:
-            current_step.append(text)
+            current_step.append(row_text)
         else:
-            pre_step_lines.append(text)
+            pre_step_lines.append(row_text)
 
     if current_step:
         steps.append(" ".join(current_step).strip())
 
     return [step for step in steps if step], _collapse_preparation_notes(pre_step_lines)
+
+
+def _group_method_rows(blocks: list[PdfBlock], tolerance: float = 10.0) -> list[list[PdfBlock]]:
+    rows: list[list[PdfBlock]] = []
+    current_row: list[PdfBlock] = []
+    current_page: int | None = None
+    current_y: float | None = None
+
+    for block in blocks:
+        if (
+            current_row
+            and current_page == block.page_number
+            and current_y is not None
+            and abs(block.y0 - current_y) <= tolerance
+        ):
+            current_row.append(block)
+            current_y = min(current_y, block.y0)
+            continue
+
+        if current_row:
+            rows.append(sorted(current_row, key=lambda item: item.x0))
+        current_row = [block]
+        current_page = block.page_number
+        current_y = block.y0
+
+    if current_row:
+        rows.append(sorted(current_row, key=lambda item: item.x0))
+
+    return rows
 
 
 def _collapse_preparation_notes(lines: list[str]) -> list[str]:
@@ -326,7 +381,7 @@ def _collapse_preparation_notes(lines: list[str]) -> list[str]:
         normalized = " ".join(line.split())
         if not normalized:
             continue
-        if UPPERCASE_HEADING_RE.match(normalized):
+        if _is_preparation_heading(normalized):
             if current:
                 notes.append(" ".join(current).strip())
             current = [_display_text(normalized.rstrip(":"))]
@@ -337,6 +392,35 @@ def _collapse_preparation_notes(lines: list[str]) -> list[str]:
         notes.append(" ".join(current).strip())
 
     return [note for note in notes if note]
+
+
+def _is_preparation_heading(text: str) -> bool:
+    normalized = " ".join(text.split()).strip()
+    if not normalized:
+        return False
+    if UPPERCASE_HEADING_RE.match(normalized):
+        return True
+    return normalized.lower().endswith("method") or normalized.lower().endswith("method:")
+
+
+def _extract_embedded_step(text: str) -> str | None:
+    normalized = " ".join(text.split()).strip()
+    if not normalized or INLINE_STEP_RE.match(normalized) or STEP_NUMBER_RE.match(normalized):
+        return None
+
+    match = EMBEDDED_STEP_RE.match(normalized)
+    if not match:
+        return None
+
+    step_number = (match.group("number") or match.group("number_tail") or "").strip()
+    leading = (match.group("leading") or "").strip()
+    trailing = (match.group("trailing") or "").strip()
+    candidate = leading or trailing
+    if len(step_number) != 1 or not candidate or candidate.isupper():
+        return None
+    if not re.search(r"[.!?]$", candidate):
+        return None
+    return candidate
 
 
 def _ingredient_record(raw: str) -> dict[str, str | bool | None]:

@@ -205,12 +205,12 @@ def summarize_network(
         for node in adjacency
     }
 
-    top_degree = sorted(degree_centrality.items(), key=lambda item: (-item[1], item[0]))[:8]
-    top_strength = sorted(strengths.items(), key=lambda item: (-item[1], item[0]))[:8]
-    top_closeness = sorted(closeness.items(), key=lambda item: (-item[1], item[0]))[:8]
-    top_weighted_closeness = sorted(weighted_closeness.items(), key=lambda item: (-item[1], item[0]))[:8]
-    top_frequency = sorted(node_counts.items(), key=lambda item: (-item[1], item[0]))[:10]
-    top_edges = sorted(edge_weights.items(), key=lambda item: (-item[1], item[0]))[:10]
+    top_degree = sorted(degree_centrality.items(), key=lambda item: (-item[1], item[0]))[:24]
+    top_strength = sorted(strengths.items(), key=lambda item: (-item[1], item[0]))[:48]
+    top_closeness = sorted(closeness.items(), key=lambda item: (-item[1], item[0]))[:24]
+    top_weighted_closeness = sorted(weighted_closeness.items(), key=lambda item: (-item[1], item[0]))[:24]
+    top_frequency = sorted(node_counts.items(), key=lambda item: (-item[1], item[0]))[:24]
+    top_edges = sorted(edge_weights.items(), key=lambda item: (-item[1], item[0]))[:180]
 
     return {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -235,6 +235,78 @@ def summarize_network(
         "top_cooccurrence_edges": [
             {"source": left, "target": right, "value": weight}
             for (left, right), weight in top_edges
+        ],
+    }
+
+
+def build_graph_preview(
+    node_counts: dict[str, int],
+    edge_weights: dict[tuple[str, str], int],
+    adjacency: dict[str, dict[str, int]],
+    summary: dict[str, Any],
+    *,
+    max_nodes: int = 100,
+    max_edges: int = 420,
+    min_edge_weight: int = 5,
+) -> dict[str, Any]:
+    degree_lookup = {
+        item["ingredient"]: item["value"]
+        for item in summary["top_degree_centrality"]
+    }
+    weighted_degree_lookup = {
+        item["ingredient"]: item["value"]
+        for item in summary["top_weighted_degree"]
+    }
+    closeness_lookup = {
+        item["ingredient"]: item["value"]
+        for item in summary["top_closeness_centrality"]
+    }
+    weighted_closeness_lookup = {
+        item["ingredient"]: item["value"]
+        for item in summary["top_weighted_closeness_centrality"]
+    }
+
+    top_nodes = [item["ingredient"] for item in summary["top_frequency"][:max_nodes]]
+    selected = set(top_nodes)
+    preview_edges = [
+        (left, right, weight)
+        for (left, right), weight in edge_weights.items()
+        if left in selected and right in selected and weight >= min_edge_weight
+    ]
+    preview_edges.sort(key=lambda item: (-item[2], item[0], item[1]))
+    preview_edges = preview_edges[:max_edges]
+
+    nodes = top_nodes
+    node_set = set(nodes)
+    node_adjacency = {
+        node: {neighbor: adjacency[node][neighbor] for neighbor in adjacency[node] if neighbor in node_set}
+        for node in nodes
+    }
+    positions = force_layout(nodes, node_adjacency)
+
+    return {
+        "preview_node_count": len(nodes),
+        "preview_edge_count": len(preview_edges),
+        "node_count": summary["node_count"],
+        "edge_count": summary["edge_count"],
+        "min_occurrence": summary["min_occurrence"],
+        "nodes": [
+            {
+                "id": node,
+                "label": node,
+                "x": round(positions[node][0], 2),
+                "y": round(positions[node][1], 2),
+                "frequency": node_counts.get(node, 0),
+                "degree_centrality": degree_lookup.get(node, 0),
+                "weighted_degree": weighted_degree_lookup.get(node, 0),
+                "closeness_centrality": closeness_lookup.get(node, 0),
+                "weighted_closeness": weighted_closeness_lookup.get(node, 0),
+            }
+            for node in nodes
+        ],
+        "links": [
+            {"source": left, "target": right, "value": weight}
+            for left, right, weight in preview_edges
         ],
     }
 
@@ -392,6 +464,7 @@ def main() -> None:
         recipe_count=len(recipes),
         min_occurrence=args.min_occurrence,
     )
+    summary["graph_preview"] = build_graph_preview(node_counts, edge_weights, adjacency, summary)
 
     slug = f"ingredient-network-{args.date}"
     output_dir = Path(args.output_dir)

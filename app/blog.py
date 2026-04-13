@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict, deque
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
+
+from app.models import RecipeRecord
 
 
 BASE_DIR = Path(__file__).resolve().parent
+INGREDIENT_NETWORK_SLUG = "mapping-the-ingredient-network"
+INGREDIENT_NETWORK_PREVIEW_MAX_NODES = 180
+INGREDIENT_NETWORK_PREVIEW_MAX_EDGES = 900
+INGREDIENT_NETWORK_DEFAULT_DISPLAY_NODES = 100
+INGREDIENT_NETWORK_MIN_DISPLAY_NODES = 20
 
 
 @dataclass(frozen=True)
@@ -28,6 +37,8 @@ class BlogPost:
     figure_caption: str = ""
     key_stats: tuple[tuple[str, str], ...] = ()
     sections: tuple[BlogSection, ...] = ()
+    figure_kind: str = "image"
+    network_data: dict[str, Any] | None = None
 
 
 def _load_json_summary(relative_path: str) -> dict:
@@ -56,6 +67,232 @@ def _format_ranked_edges(items: list[dict]) -> tuple[str, ...]:
     )
 
 
+def _rank_lookup(items: list[dict[str, Any]]) -> dict[str, float]:
+    return {
+        str(item["ingredient"]): float(item["value"])
+        for item in items
+        if item.get("ingredient") is not None and item.get("value") is not None
+    }
+
+
+def _with_network_display_defaults(data: dict[str, Any]) -> dict[str, Any]:
+    preview_node_count = len(data.get("nodes", []))
+    preview_edge_count = len(data.get("links", []))
+    slider_max = preview_node_count
+    slider_min = min(preview_node_count, INGREDIENT_NETWORK_MIN_DISPLAY_NODES) if preview_node_count else 0
+    default_display = min(preview_node_count, INGREDIENT_NETWORK_DEFAULT_DISPLAY_NODES) if preview_node_count else 0
+    slider_step = 1 if preview_node_count <= 40 else 5
+    return {
+        **data,
+        "preview_node_count": preview_node_count,
+        "preview_edge_count": preview_edge_count,
+        "slider_min_node_count": slider_min,
+        "slider_max_node_count": slider_max,
+        "slider_step": slider_step,
+        "default_display_node_count": default_display,
+    }
+
+
+def _derive_network_data(summary: dict[str, Any]) -> dict[str, Any]:
+    graph_preview = summary.get("graph_preview")
+    if isinstance(graph_preview, dict) and graph_preview.get("nodes") and graph_preview.get("links"):
+        return _with_network_display_defaults(graph_preview)
+
+    top_edges = summary.get("top_cooccurrence_edges", [])
+    degree_lookup = _rank_lookup(summary.get("top_degree_centrality", []))
+    weighted_degree_lookup = _rank_lookup(summary.get("top_weighted_degree", []))
+    closeness_lookup = _rank_lookup(summary.get("top_closeness_centrality", []))
+    weighted_closeness_lookup = _rank_lookup(summary.get("top_weighted_closeness_centrality", []))
+    frequency_lookup = _rank_lookup(summary.get("top_frequency", []))
+
+    node_order: list[str] = []
+    for collection in (
+        summary.get("top_weighted_degree", []),
+        summary.get("top_degree_centrality", []),
+        summary.get("top_closeness_centrality", []),
+        summary.get("top_weighted_closeness_centrality", []),
+        summary.get("top_frequency", []),
+    ):
+        for item in collection:
+            ingredient = str(item.get("ingredient", "")).strip()
+            if ingredient and ingredient not in node_order:
+                node_order.append(ingredient)
+
+    for edge in top_edges:
+        for key in ("source", "target"):
+            ingredient = str(edge.get(key, "")).strip()
+            if ingredient and ingredient not in node_order:
+                node_order.append(ingredient)
+
+    edge_strengths: dict[str, float] = {}
+    for edge in top_edges:
+        source = str(edge.get("source", "")).strip()
+        target = str(edge.get("target", "")).strip()
+        weight = float(edge.get("value", 0) or 0)
+        if source:
+            edge_strengths[source] = edge_strengths.get(source, 0.0) + weight
+        if target:
+            edge_strengths[target] = edge_strengths.get(target, 0.0) + weight
+
+    nodes = [
+        {
+            "id": ingredient,
+            "label": ingredient,
+            "frequency": frequency_lookup.get(ingredient, 0.0),
+            "degree_centrality": degree_lookup.get(ingredient, 0.0),
+            "weighted_degree": weighted_degree_lookup.get(ingredient, edge_strengths.get(ingredient, 0.0)),
+            "closeness_centrality": closeness_lookup.get(ingredient, 0.0),
+            "weighted_closeness": weighted_closeness_lookup.get(ingredient, 0.0),
+        }
+        for ingredient in node_order
+    ]
+    links = [
+        {
+            "source": str(edge.get("source", "")).strip(),
+            "target": str(edge.get("target", "")).strip(),
+            "value": int(edge.get("value", 0) or 0),
+        }
+        for edge in top_edges
+        if str(edge.get("source", "")).strip() and str(edge.get("target", "")).strip()
+    ]
+    return _with_network_display_defaults(
+        {
+            "min_occurrence": int(summary.get("min_occurrence", 0) or 0),
+            "node_count": int(summary.get("node_count", len(nodes)) or len(nodes)),
+            "edge_count": int(summary.get("edge_count", len(links)) or len(links)),
+            "nodes": nodes,
+            "links": links,
+        }
+    )
+
+
+def build_ingredient_network_preview(
+    recipes: list[RecipeRecord],
+    *,
+    min_occurrence: int = 3,
+    max_nodes: int = INGREDIENT_NETWORK_PREVIEW_MAX_NODES,
+    max_edges: int = INGREDIENT_NETWORK_PREVIEW_MAX_EDGES,
+) -> dict[str, Any]:
+    node_counts: Counter[str] = Counter()
+    recipe_ingredients: list[list[str]] = []
+    for recipe in recipes:
+        ingredients = sorted({name.strip() for name in recipe.ingredient_names if name.strip()})
+        if not ingredients:
+            continue
+        recipe_ingredients.append(ingredients)
+        node_counts.update(ingredients)
+
+    kept_nodes = {name for name, count in node_counts.items() if count >= min_occurrence}
+    ranked_nodes = [
+        name
+        for name, _count in sorted(node_counts.items(), key=lambda item: (-item[1], item[0]))
+        if name in kept_nodes
+    ][:max_nodes]
+    selected = set(ranked_nodes)
+
+    edge_weights: Counter[tuple[str, str]] = Counter()
+    adjacency: dict[str, set[str]] = defaultdict(set)
+    weighted_degree: Counter[str] = Counter()
+    for ingredients in recipe_ingredients:
+        filtered = [name for name in ingredients if name in selected]
+        if len(filtered) < 2:
+            continue
+        for index, left in enumerate(filtered):
+            for right in filtered[index + 1 :]:
+                edge = (left, right) if left < right else (right, left)
+                edge_weights[edge] += 1
+
+    ranked_edges = sorted(edge_weights.items(), key=lambda item: (-item[1], item[0][0], item[0][1]))[:max_edges]
+    for (left, right), weight in ranked_edges:
+        adjacency[left].add(right)
+        adjacency[right].add(left)
+        weighted_degree[left] += weight
+        weighted_degree[right] += weight
+
+    nodes = ranked_nodes
+    if not nodes:
+        return _with_network_display_defaults(
+            {
+                "min_occurrence": min_occurrence,
+                "node_count": 0,
+                "edge_count": 0,
+                "nodes": [],
+                "links": [],
+            }
+        )
+
+    node_set = set(nodes)
+    connected_adjacency = {
+        node: {neighbor for neighbor in adjacency.get(node, set()) if neighbor in node_set}
+        for node in nodes
+    }
+    closeness = _closeness_centrality(nodes, connected_adjacency)
+    node_count = len(nodes)
+    return _with_network_display_defaults(
+        {
+            "min_occurrence": min_occurrence,
+            "node_count": node_count,
+            "edge_count": len(edge_weights),
+            "nodes": [
+                {
+                    "id": node,
+                    "label": node,
+                    "frequency": int(node_counts.get(node, 0)),
+                    "degree_centrality": (len(connected_adjacency.get(node, set())) / max(node_count - 1, 1)),
+                    "weighted_degree": int(weighted_degree.get(node, 0)),
+                    "closeness_centrality": closeness.get(node, 0.0),
+                    "weighted_closeness": closeness.get(node, 0.0),
+                }
+                for node in nodes
+            ],
+            "links": [
+                {"source": left, "target": right, "value": int(weight)}
+                for (left, right), weight in ranked_edges
+                if left in node_set and right in node_set
+            ],
+        }
+    )
+
+
+def enrich_blog_post(post: BlogPost, recipes: list[RecipeRecord] | None = None) -> BlogPost:
+    if post.slug != INGREDIENT_NETWORK_SLUG or recipes is None:
+        return post
+
+    summary = _load_json_summary("blog_data/ingredient-network-2026-04-13.json")
+    network_data = build_ingredient_network_preview(
+        recipes,
+        min_occurrence=int(summary.get("min_occurrence", 3) or 3),
+        max_nodes=INGREDIENT_NETWORK_PREVIEW_MAX_NODES,
+        max_edges=INGREDIENT_NETWORK_PREVIEW_MAX_EDGES,
+    )
+    network_data["node_count"] = int(summary.get("node_count", network_data["node_count"]) or network_data["node_count"])
+    network_data["edge_count"] = int(summary.get("edge_count", network_data["edge_count"]) or network_data["edge_count"])
+    return replace(post, network_data=network_data)
+
+
+def _closeness_centrality(nodes: list[str], adjacency: dict[str, set[str]]) -> dict[str, float]:
+    closeness: dict[str, float] = {}
+    for node in nodes:
+        distances = _shortest_paths(node, adjacency)
+        reachable = len(distances) - 1
+        total_distance = sum(distance for target, distance in distances.items() if target != node)
+        closeness[node] = (reachable / total_distance) if reachable > 0 and total_distance else 0.0
+    return closeness
+
+
+def _shortest_paths(source: str, adjacency: dict[str, set[str]]) -> dict[str, int]:
+    distances = {source: 0}
+    queue = deque([source])
+    while queue:
+        node = queue.popleft()
+        for neighbor in adjacency.get(node, set()):
+            if neighbor in distances:
+                continue
+            distances[neighbor] = distances[node] + 1
+            queue.append(neighbor)
+    return distances
+
+
 def _ingredient_network_post() -> BlogPost:
     summary = _load_json_summary("blog_data/ingredient-network-2026-04-13.json")
     top_degree = summary["top_degree_centrality"][:5]
@@ -73,7 +310,7 @@ def _ingredient_network_post() -> BlogPost:
             "A first look at the ingredient co-occurrence graph across the recipe library, including "
             "centrality, path length, density, and the strongest recurring pairings."
         ),
-        image_path="/blog/ingredient-network-2026-04-13.svg",
+        image_path="blog/ingredient-network-2026-04-13.svg",
         image_alt=(
             "Ingredient co-occurrence network diagram showing olive oil, salt, garlic, onion, butter, and other central pantry ingredients."
         ),
@@ -122,6 +359,8 @@ def _ingredient_network_post() -> BlogPost:
                 items=_format_ranked_edges(top_edges),
             ),
         ),
+        figure_kind="interactive_network",
+        network_data=_derive_network_data(summary),
     )
 
 
@@ -137,7 +376,7 @@ BLOG_POSTS = (
             "A note on building a calmer way to agree the week’s meals, do the shop together, "
             "and actually use the recipes we already have."
         ),
-        image_path="/blog/meal-planning-origin.svg",
+        image_path="blog/meal-planning-origin.svg",
         image_alt=(
             "Meal planning notes showing dinners, lunches, and a running edit history from a shared planning document."
         ),

@@ -37,6 +37,7 @@
         <img class="lightbox__image" src="" alt="" />
       </div>
     </div>
+    {% block page_scripts %}{% endblock %}
     <script src="{{ url_for('static', path='/app.js') }}" defer></script>
   </body>
 </html>

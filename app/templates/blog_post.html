@@ -19,12 +19,66 @@
     </section>
 
     <section class="panel blog-post__panel">
-      <figure class="blog-post__figure">
-        <img src="{{ url_for('static', path=post.image_path) }}" alt="{{ post.image_alt }}" />
-        {% if post.figure_caption %}
-          <figcaption class="blog-post__caption">{{ post.figure_caption }}</figcaption>
-        {% endif %}
-      </figure>
+      {% if post.figure_kind == "interactive_network" and post.network_data %}
+        <figure class="blog-post__figure blog-post__figure--interactive">
+          <div class="ingredient-network" data-ingredient-network>
+            <script type="application/json" data-network-payload>{{ post.network_data | tojson }}</script>
+            <div class="ingredient-network__header">
+              <div>
+                <p class="ingredient-network__eyebrow">Interactive Graph</p>
+                <h2>Ingredient Co-occurrence Map</h2>
+              </div>
+              <p class="ingredient-network__hint" data-ingredient-network-hint>
+                Use the slider to choose how many ranked ingredients to display from the wider
+                {{ post.network_data.node_count }}-ingredient network. Drag nodes and hover for context.
+              </p>
+            </div>
+            <div class="ingredient-network__controls" data-ingredient-network-controls>
+              <label class="ingredient-network__slider-label" for="ingredient-network-node-count">
+                Ingredients to display
+              </label>
+              <div class="ingredient-network__slider-row">
+                <input
+                  id="ingredient-network-node-count"
+                  class="ingredient-network__slider"
+                  type="range"
+                  min="{{ post.network_data.slider_min_node_count }}"
+                  max="{{ post.network_data.slider_max_node_count }}"
+                  step="{{ post.network_data.slider_step }}"
+                  value="{{ post.network_data.default_display_node_count }}"
+                  data-ingredient-network-slider
+                />
+                <output
+                  class="ingredient-network__slider-value"
+                  for="ingredient-network-node-count"
+                  data-ingredient-network-slider-value
+                >
+                  {{ post.network_data.default_display_node_count }}
+                </output>
+              </div>
+            </div>
+            <div class="ingredient-network__canvas" data-ingredient-network-canvas aria-label="{{ post.image_alt }}"></div>
+            <div class="ingredient-network__legend">
+              <span>Node size = weighted connectivity</span>
+              <span>Link weight = shared recipes</span>
+              <span>Selection = local neighborhood</span>
+            </div>
+            <div class="ingredient-network__fallback" data-ingredient-network-fallback hidden>
+              <img src="{{ url_for('static', path=post.image_path) }}" alt="{{ post.image_alt }}" />
+            </div>
+          </div>
+          {% if post.figure_caption %}
+            <figcaption class="blog-post__caption">{{ post.figure_caption }}</figcaption>
+          {% endif %}
+        </figure>
+      {% else %}
+        <figure class="blog-post__figure">
+          <img src="{{ url_for('static', path=post.image_path) }}" alt="{{ post.image_alt }}" />
+          {% if post.figure_caption %}
+            <figcaption class="blog-post__caption">{{ post.figure_caption }}</figcaption>
+          {% endif %}
+        </figure>
+      {% endif %}
       {% if post.key_stats %}
         <div class="blog-stat-grid">
           {% for label, value in post.key_stats %}
@@ -56,4 +110,10 @@
       {% endif %}
     </section>
   </article>
+{% endblock %}
+
+{% block page_scripts %}
+  {% if post.figure_kind == "interactive_network" %}
+    <script src="{{ url_for('static', path='vendor/d3.v7.min.js') }}"></script>
+  {% endif %}
 {% endblock %}

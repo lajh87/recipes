@@ -24,9 +24,25 @@
       </div>
     </div>
     <div class="detail-navigation">
-      {% set favorite_recipe = recipe %}
-      {% set favorite_button_class = 'favorite-toggle--detail' %}
-      {% include "_favorite_button.html" %}
+      {% set recipe_toggle_recipe = recipe %}
+      {% set recipe_toggle_kind = 'favorite' %}
+      {% set recipe_toggle_action = url_for('toggle_recipe_favorite', recipe_id=recipe.id) %}
+      {% set recipe_toggle_field_name = 'is_favorite' %}
+      {% set recipe_toggle_active = recipe.is_favorite %}
+      {% set recipe_toggle_label_active = 'Remove from favourites' %}
+      {% set recipe_toggle_label_inactive = 'Add to favourites' %}
+      {% set recipe_toggle_icon = '★' %}
+      {% set recipe_toggle_button_class = 'recipe-toggle--favorite recipe-toggle--detail' %}
+      {% include "_recipe_toggle_button.html" %}
+      {% set recipe_toggle_kind = 'want-to-try' %}
+      {% set recipe_toggle_action = url_for('toggle_recipe_want_to_try', recipe_id=recipe.id) %}
+      {% set recipe_toggle_field_name = 'is_want_to_try' %}
+      {% set recipe_toggle_active = recipe.is_want_to_try %}
+      {% set recipe_toggle_label_active = 'Remove from want to try' %}
+      {% set recipe_toggle_label_inactive = 'Add to want to try' %}
+      {% set recipe_toggle_icon = '⚑' %}
+      {% set recipe_toggle_button_class = 'recipe-toggle--want recipe-toggle--detail' %}
+      {% include "_recipe_toggle_button.html" %}
       {% if previous_recipe %}
         <a class="button button--secondary" href="{{ url_for('recipe_page', recipe_id=previous_recipe.id) }}{% if selected_collection_slug %}?collection={{ selected_collection_slug }}{% endif %}">Previous</a>
       {% endif %}

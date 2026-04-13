@@ -53,6 +53,12 @@ RECIPE_COLLECTIONS = (
         "allow_upload": False,
     },
     {
+        "slug": "want-to-try",
+        "title": "Want To Try",
+        "description": "Recipes you want to keep in a short list for future cooking.",
+        "allow_upload": False,
+    },
+    {
         "slug": "nytimes",
         "title": "NYTimes",
         "description": "Stage and manage recipe source files for New York Times recipes.",
@@ -303,6 +309,10 @@ class LibraryRepository:
             recipe_ids = self.redis.zrevrange(self.settings.favorite_recipe_index_key, 0, -1)
             recipes = [self.get_recipe(recipe_id) for recipe_id in recipe_ids]
             return [recipe for recipe in recipes if recipe]
+        if slug == "want-to-try":
+            recipe_ids = self.redis.zrevrange(self.settings.want_to_try_recipe_index_key, 0, -1)
+            recipes = [self.get_recipe(recipe_id) for recipe_id in recipe_ids]
+            return [recipe for recipe in recipes if recipe]
         if not any(collection["slug"] == slug for collection in RECIPE_COLLECTIONS):
             return []
         collection_cookbook_ids = {
@@ -317,7 +327,7 @@ class LibraryRepository:
     def list_cookbooks_for_collection(self, slug: str, *, sort_by: str = "title") -> list[CookbookItem]:
         if slug == "favorites":
             slug = "favourites"
-        if slug == "favourites":
+        if slug in {"favourites", "want-to-try"}:
             return []
         if not any(collection["slug"] == slug for collection in RECIPE_COLLECTIONS):
             return []
@@ -757,10 +767,14 @@ class LibraryRepository:
             payload,
             recipe_id=recipe_id,
             is_favorite=self.is_recipe_favorite(recipe_id),
+            is_want_to_try=self.is_recipe_want_to_try(recipe_id),
         )
 
     def is_recipe_favorite(self, recipe_id: str) -> bool:
         return self.redis.zscore(self.settings.favorite_recipe_index_key, recipe_id) is not None
+
+    def is_recipe_want_to_try(self, recipe_id: str) -> bool:
+        return self.redis.zscore(self.settings.want_to_try_recipe_index_key, recipe_id) is not None
 
     def set_recipe_favorite(self, recipe_id: str, *, is_favorite: bool) -> RecipeRecord | None:
         recipe = self.get_recipe(recipe_id)
@@ -774,6 +788,19 @@ class LibraryRepository:
         else:
             self.redis.zrem(self.settings.favorite_recipe_index_key, recipe_id)
         return recipe.model_copy(update={"is_favorite": is_favorite})
+
+    def set_recipe_want_to_try(self, recipe_id: str, *, is_want_to_try: bool) -> RecipeRecord | None:
+        recipe = self.get_recipe(recipe_id)
+        if not recipe:
+            return None
+        if is_want_to_try:
+            self.redis.zadd(
+                self.settings.want_to_try_recipe_index_key,
+                {recipe_id: datetime.now(UTC).timestamp()},
+            )
+        else:
+            self.redis.zrem(self.settings.want_to_try_recipe_index_key, recipe_id)
+        return recipe.model_copy(update={"is_want_to_try": is_want_to_try})
 
     def update_recipe_review(
         self,
@@ -1053,6 +1080,7 @@ class LibraryRepository:
             self.redis.delete(self.settings.recipe_key(recipe_id))
             self.redis.delete(self.settings.recipe_reference_key(recipe_id))
             self.redis.zrem(self.settings.favorite_recipe_index_key, recipe_id)
+            self.redis.zrem(self.settings.want_to_try_recipe_index_key, recipe_id)
             qdrant_ids.append(recipe_id)
         self.redis.delete(self.settings.cookbook_recipe_index_key(cookbook_id))
 
@@ -1543,15 +1571,23 @@ class LibraryRepository:
 
         payloads = self.redis.mget([self.settings.recipe_key(recipe_id) for recipe_id in recipe_ids])
         favorite_scores = self.redis.zmscore(self.settings.favorite_recipe_index_key, recipe_ids)
+        want_to_try_scores = self.redis.zmscore(self.settings.want_to_try_recipe_index_key, recipe_ids)
 
         recipes: list[RecipeRecord] = []
-        for recipe_id, payload, favorite_score in zip(recipe_ids, payloads, favorite_scores, strict=False):
+        for recipe_id, payload, favorite_score, want_to_try_score in zip(
+            recipe_ids,
+            payloads,
+            favorite_scores,
+            want_to_try_scores,
+            strict=False,
+        ):
             if not payload:
                 continue
             recipe = self._hydrate_recipe_payload(
                 payload,
                 recipe_id=recipe_id,
                 is_favorite=favorite_score is not None,
+                is_want_to_try=want_to_try_score is not None,
             )
             recipes.append(recipe)
         return recipes
@@ -1595,6 +1631,7 @@ class LibraryRepository:
         *,
         recipe_id: str,
         is_favorite: bool,
+        is_want_to_try: bool,
     ) -> RecipeRecord:
         recipe = RecipeRecord.model_validate_json(payload)
         cleaned_cookbook_title = self._clean_metadata_text(recipe.cookbook_title)
@@ -1610,12 +1647,14 @@ class LibraryRepository:
         if (
             recipe.id != recipe_id
             or recipe.is_favorite != is_favorite
+            or recipe.is_want_to_try != is_want_to_try
             or recipe.ingredient_names != canonical_ingredient_names
         ):
             recipe = recipe.model_copy(
                 update={
                     "id": recipe_id,
                     "is_favorite": is_favorite,
+                    "is_want_to_try": is_want_to_try,
                     "ingredient_names": canonical_ingredient_names,
                 }
             )

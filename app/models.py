@@ -107,6 +107,7 @@ class RecipeRecord(BaseModel):
     extraction: RecipeExtractionRecord
     review: RecipeReviewRecord
     is_favorite: bool = False
+    is_want_to_try: bool = False
 
 
 class IngredientIndexItem(BaseModel):

@@ -994,9 +994,44 @@ async def toggle_recipe_favorite(
         return JSONResponse(
             {
                 "recipe_id": recipe.id,
-                "is_favorite": recipe.is_favorite,
+                "toggle_kind": "favorite",
+                "is_active": recipe.is_favorite,
                 "next_value": "false" if recipe.is_favorite else "true",
                 "label": "Remove from favourites" if recipe.is_favorite else "Add to favourites",
+                "notice": notice,
+            }
+        )
+    return redirect_with_notice(destination, notice)
+
+
+@app.post("/recipes/{recipe_id}/want-to-try")
+async def toggle_recipe_want_to_try(
+    recipe_id: str,
+    request: Request,
+    is_want_to_try: str = Form(...),
+    return_to: str | None = Form(default=None),
+) -> Response:
+    repository = get_repository(request)
+    recipe = repository.set_recipe_want_to_try(
+        recipe_id,
+        is_want_to_try=is_want_to_try.strip().lower() == "true",
+    )
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found.")
+
+    fallback = str(request.url_for("recipe_page", recipe_id=recipe_id))
+    destination = safe_redirect_target(return_to, fallback)
+    notice = "Added to want to try." if recipe.is_want_to_try else "Removed from want to try."
+    accepts_json = "application/json" in request.headers.get("accept", "").lower()
+    is_ajax = request.headers.get("x-requested-with", "").lower() == "xmlhttprequest"
+    if accepts_json or is_ajax:
+        return JSONResponse(
+            {
+                "recipe_id": recipe.id,
+                "toggle_kind": "want-to-try",
+                "is_active": recipe.is_want_to_try,
+                "next_value": "false" if recipe.is_want_to_try else "true",
+                "label": "Remove from want to try" if recipe.is_want_to_try else "Add to want to try",
                 "notice": notice,
             }
         )

@@ -34,6 +34,16 @@ class RecipeCollectionTests(unittest.TestCase):
         self.assertEqual(collections[0].slug, "favourites")
         self.assertEqual(collections[0].title, "Favourites")
 
+    def test_want_to_try_collection_is_listed_after_favourites(self) -> None:
+        repository = object.__new__(LibraryRepository)
+        repository.list_recipes_for_collection = lambda slug: []  # type: ignore[method-assign]
+
+        collections = repository.list_recipe_collections()
+
+        self.assertGreaterEqual(len(collections), 2)
+        self.assertEqual(collections[1].slug, "want-to-try")
+        self.assertEqual(collections[1].title, "Want To Try")
+
     def test_collection_slug_can_be_assigned_explicitly(self) -> None:
         cookbook = build_cookbook(
             title="NYT Lemon Chicken",

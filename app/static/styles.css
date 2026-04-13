@@ -1041,11 +1041,11 @@ input[type="search"]:focus,
   align-items: flex-start;
 }
 
-.favorite-toggle-form {
+.recipe-toggle-form {
   margin: 0;
 }
 
-.favorite-toggle {
+.recipe-toggle {
   display: inline-grid;
   place-items: center;
   width: 42px;
@@ -1066,23 +1066,41 @@ input[type="search"]:focus,
     transform 140ms ease;
 }
 
-.favorite-toggle:hover {
+.recipe-toggle:hover {
   color: #8d6c10;
   border-color: #dcc57a;
   background: #fff8de;
   transform: translateY(-1px);
 }
 
-.favorite-toggle.is-active {
+.recipe-toggle.is-active {
   color: #9f7600;
   border-color: #dcc57a;
   background: #fff3c2;
 }
 
-.favorite-toggle--detail {
+.recipe-toggle--want:hover {
+  color: #175842;
+  border-color: #8ac7b0;
+  background: #e8f7f0;
+}
+
+.recipe-toggle--want.is-active {
+  color: #175842;
+  border-color: #8ac7b0;
+  background: #d9f1e7;
+}
+
+.recipe-toggle--detail {
   width: 48px;
   height: 48px;
   font-size: 1.35rem;
+}
+
+.recipe-summary-card__toggles {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .recipe-summary-card__header p {

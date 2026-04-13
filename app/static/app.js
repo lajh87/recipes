@@ -40,25 +40,27 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-function syncFavoriteButtons(recipeId, isFavorite, nextValue, label) {
-  const forms = document.querySelectorAll(`[data-favorite-form][data-recipe-id="${CSS.escape(recipeId)}"]`);
+function syncRecipeToggleButtons(recipeId, toggleKind, isActive, nextValue, label) {
+  const forms = document.querySelectorAll(
+    `[data-recipe-toggle-form][data-toggle-kind="${CSS.escape(toggleKind)}"][data-recipe-id="${CSS.escape(recipeId)}"]`,
+  );
   for (const form of forms) {
     if (!(form instanceof HTMLFormElement)) {
       continue;
     }
-    const button = form.querySelector("[data-favorite-button]");
+    const button = form.querySelector("[data-recipe-toggle-button]");
     if (!(button instanceof HTMLButtonElement)) {
       continue;
     }
-    button.classList.toggle("is-active", isFavorite);
+    button.classList.toggle("is-active", isActive);
     button.value = nextValue;
     button.setAttribute("aria-label", label);
     button.setAttribute("title", label);
   }
 }
 
-function maybeRemoveFavoriteCard(form, isFavorite) {
-  if (isFavorite || form.dataset.removeCardOnUnfavorite !== "true") {
+function maybeRemoveRecipeToggleCard(form, isActive) {
+  if (isActive || form.dataset.removeCardOnInactive !== "true") {
     return;
   }
 
@@ -67,28 +69,29 @@ function maybeRemoveFavoriteCard(form, isFavorite) {
     card.remove();
   }
 
-  const favoritesGrid = document.querySelector("[data-favorites-grid]");
-  if (!(favoritesGrid instanceof HTMLElement)) {
+  const toggleKind = form.dataset.toggleKind || "";
+  const collectionGrid = document.querySelector(`[data-toggle-grid][data-toggle-kind="${CSS.escape(toggleKind)}"]`);
+  if (!(collectionGrid instanceof HTMLElement)) {
     return;
   }
 
-  if (favoritesGrid.querySelector(".recipe-summary-card")) {
+  if (collectionGrid.querySelector(".recipe-summary-card")) {
     return;
   }
 
   const emptyState = document.createElement("article");
   emptyState.className = "empty-state";
   const title = document.createElement("h3");
-  title.textContent = favoritesGrid.dataset.emptyTitle || "No favourites yet";
+  title.textContent = collectionGrid.dataset.emptyTitle || "No recipes yet";
   const body = document.createElement("p");
-  body.textContent = favoritesGrid.dataset.emptyBody || "Star recipes from a card or recipe page to build this collection.";
+  body.textContent = collectionGrid.dataset.emptyBody || "Use a recipe toggle to build this collection.";
   emptyState.append(title, body);
-  favoritesGrid.append(emptyState);
+  collectionGrid.append(emptyState);
 }
 
-function initFavoriteToggles() {
+function initRecipeToggles() {
   document.addEventListener("submit", async (event) => {
-    const form = event.target.closest("[data-favorite-form]");
+    const form = event.target.closest("[data-recipe-toggle-form]");
     if (!(form instanceof HTMLFormElement)) {
       return;
     }
@@ -97,13 +100,17 @@ function initFavoriteToggles() {
 
     const button = event.submitter instanceof HTMLButtonElement
       ? event.submitter
-      : form.querySelector("[data-favorite-button]");
+      : form.querySelector("[data-recipe-toggle-button]");
     if (!(button instanceof HTMLButtonElement) || button.disabled) {
       return;
     }
 
     const formData = new FormData(form);
-    formData.set("is_favorite", button.value);
+    const fieldName = button.name;
+    if (!fieldName) {
+      return;
+    }
+    formData.set(fieldName, button.value);
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
 
@@ -118,15 +125,15 @@ function initFavoriteToggles() {
       });
 
       if (!response.ok) {
-        throw new Error(`Favorite toggle failed with status ${response.status}`);
+        throw new Error(`Recipe toggle failed with status ${response.status}`);
       }
 
       const payload = await response.json();
-      syncFavoriteButtons(payload.recipe_id, payload.is_favorite, payload.next_value, payload.label);
-      maybeRemoveFavoriteCard(form, payload.is_favorite);
+      syncRecipeToggleButtons(payload.recipe_id, payload.toggle_kind, payload.is_active, payload.next_value, payload.label);
+      maybeRemoveRecipeToggleCard(form, payload.is_active);
     } catch (error) {
       console.error(error);
-      window.alert("Could not update favourites right now. Try again.");
+      window.alert("Could not update recipe flags right now. Try again.");
     } finally {
       button.disabled = false;
       button.removeAttribute("aria-busy");
@@ -1325,6 +1332,6 @@ document.addEventListener("click", (event) => {
   }
 });
 
-initFavoriteToggles();
+initRecipeToggles();
 initCookbookToc();
 initMealPlanAutoLink();

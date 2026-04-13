@@ -44,16 +44,17 @@
     <div class="section-heading">
       <div>
         <h2>Recipes</h2>
-        <p>{% if collection.slug == 'favourites' %}Your starred recipes appear here.{% else %}Unprocessed files link to the original PDF. Processed items expand into recipe cards.{% endif %}</p>
+        <p>{% if collection.slug == 'favourites' %}Your starred recipes appear here.{% elif collection.slug == 'want-to-try' %}Recipes you have flagged for future cooking appear here.{% else %}Unprocessed files link to the original PDF. Processed items expand into recipe cards.{% endif %}</p>
       </div>
     </div>
     {% set staged_cookbooks = cookbooks|selectattr('recipe_count', 'equalto', 0)|list %}
     <div
       class="recipe-grid"
-      {% if collection.slug == 'favourites' %}
-        data-favorites-grid
-        data-empty-title="No favourites yet"
-        data-empty-body="Star recipes from a card or recipe page to build this collection."
+      {% if collection.slug in ['favourites', 'want-to-try'] %}
+        data-toggle-grid
+        data-toggle-kind="{{ 'favorite' if collection.slug == 'favourites' else 'want-to-try' }}"
+        data-empty-title="{{ 'No favourites yet' if collection.slug == 'favourites' else 'No want to try recipes yet' }}"
+        data-empty-body="{{ 'Star recipes from a card or recipe page to build this collection.' if collection.slug == 'favourites' else 'Use the want to try button on a card or recipe page to build this collection.' }}"
       {% endif %}
     >
       {% if staged_cookbooks or recipes %}
@@ -87,10 +88,29 @@
                 <h3><a class="text-link" href="{{ recipe_page_href }}">{{ recipe.title }}</a></h3>
                 <p>{{ recipe.cookbook_title }}</p>
               </div>
-              {% set favorite_recipe = recipe %}
-              {% set favorite_button_class = 'favorite-toggle--card' %}
-              {% set favorite_remove_card_on_unfavorite = collection.slug == 'favourites' %}
-              {% include "_favorite_button.html" %}
+              <div class="recipe-summary-card__toggles">
+                {% set recipe_toggle_recipe = recipe %}
+                {% set recipe_toggle_kind = 'favorite' %}
+                {% set recipe_toggle_action = url_for('toggle_recipe_favorite', recipe_id=recipe.id) %}
+                {% set recipe_toggle_field_name = 'is_favorite' %}
+                {% set recipe_toggle_active = recipe.is_favorite %}
+                {% set recipe_toggle_label_active = 'Remove from favourites' %}
+                {% set recipe_toggle_label_inactive = 'Add to favourites' %}
+                {% set recipe_toggle_icon = '★' %}
+                {% set recipe_toggle_button_class = 'recipe-toggle--favorite recipe-toggle--card' %}
+                {% set recipe_toggle_remove_card_on_inactive = collection.slug == 'favourites' %}
+                {% include "_recipe_toggle_button.html" %}
+                {% set recipe_toggle_kind = 'want-to-try' %}
+                {% set recipe_toggle_action = url_for('toggle_recipe_want_to_try', recipe_id=recipe.id) %}
+                {% set recipe_toggle_field_name = 'is_want_to_try' %}
+                {% set recipe_toggle_active = recipe.is_want_to_try %}
+                {% set recipe_toggle_label_active = 'Remove from want to try' %}
+                {% set recipe_toggle_label_inactive = 'Add to want to try' %}
+                {% set recipe_toggle_icon = '⚑' %}
+                {% set recipe_toggle_button_class = 'recipe-toggle--want recipe-toggle--card' %}
+                {% set recipe_toggle_remove_card_on_inactive = collection.slug == 'want-to-try' %}
+                {% include "_recipe_toggle_button.html" %}
+              </div>
             </div>
             <div class="recipe-summary-card__stats">
               <span>{{ recipe.ingredients|length }} ingredients</span>
@@ -105,7 +125,7 @@
             {% endif %}
             <div class="card-actions">
               <a class="button button--secondary" href="{{ recipe_page_href }}">Open Recipe</a>
-              {% if collection.slug != 'favourites' %}
+              {% if collection.slug not in ['favourites', 'want-to-try'] %}
                 <a class="button button--secondary" href="{{ url_for('cookbook_file', cookbook_id=recipe.cookbook_id) }}">Original PDF</a>
               {% endif %}
             </div>
@@ -116,6 +136,9 @@
           {% if collection.slug == 'favourites' %}
             <h3>No favourites yet</h3>
             <p>Star recipes from a card or recipe page to build this collection.</p>
+          {% elif collection.slug == 'want-to-try' %}
+            <h3>No want to try recipes yet</h3>
+            <p>Use the want to try button on a card or recipe page to build this collection.</p>
           {% else %}
             <h3>No files in this collection yet</h3>
             <p>Use the upload control above to stage PDF files into this collection.</p>

@@ -1,0 +1,22 @@
+<form
+  class="recipe-toggle-form"
+  action="{{ recipe_toggle_action }}"
+  method="post"
+  data-recipe-toggle-form
+  data-toggle-kind="{{ recipe_toggle_kind }}"
+  data-recipe-id="{{ recipe_toggle_recipe.id }}"
+  {% if recipe_toggle_remove_card_on_inactive|default(false) %}data-remove-card-on-inactive="true"{% endif %}
+>
+  <input type="hidden" name="return_to" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
+  <button
+    class="recipe-toggle {{ 'is-active' if recipe_toggle_active else '' }} {{ recipe_toggle_button_class|default('') }}"
+    type="submit"
+    data-recipe-toggle-button
+    name="{{ recipe_toggle_field_name }}"
+    value="{{ 'false' if recipe_toggle_active else 'true' }}"
+    aria-label="{{ recipe_toggle_label_active if recipe_toggle_active else recipe_toggle_label_inactive }}"
+    title="{{ recipe_toggle_label_active if recipe_toggle_active else recipe_toggle_label_inactive }}"
+  >
+    <span aria-hidden="true">{{ recipe_toggle_icon }}</span>
+  </button>
+</form>

@@ -5,9 +5,10 @@ from difflib import SequenceMatcher
 import json
 from pathlib import Path
 import re
+from typing import TypeAlias
 from uuid import uuid4
 
-from app.models import RecipeRecord
+from app.models import RecipeRecord, RecipeReferenceRecord
 
 MONTH_PATTERN = (
     r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
@@ -77,6 +78,7 @@ MEAL_LABELS = tuple(label for _slug, label in MEALS)
 MEAL_PLAN_FILENAME = "meal-plan.json"
 LEGACY_MEAL_PLAN_FILENAME = "recipes.txt"
 DEFAULT_IMPORT_WEEK_LIMIT = 4
+MealPlanRecipe: TypeAlias = RecipeRecord | RecipeReferenceRecord
 
 
 @dataclass(slots=True)
@@ -119,7 +121,7 @@ class MealPlanRow:
     title: str = ""
     completed: bool = False
     recipe_id: str | None = None
-    recipe: RecipeRecord | None = None
+    recipe: MealPlanRecipe | None = None
 
     @property
     def recipe_option_value(self) -> str:
@@ -170,14 +172,14 @@ class MealPlanDocument:
 
 @dataclass(slots=True)
 class _PreparedRecipe:
-    recipe: RecipeRecord
+    recipe: MealPlanRecipe
     normalized_title: str
     tokens: set[str]
 
 
 @dataclass(slots=True)
 class _ResolvedRecipeMatch:
-    recipe: RecipeRecord
+    recipe: MealPlanRecipe
     score: float
 
 
@@ -232,7 +234,7 @@ def remove_week(document: MealPlanDocument, week_id: str) -> None:
 
 def load_or_import_meal_plan(
     base_dir: Path,
-    recipes: list[RecipeRecord],
+    recipes: list[MealPlanRecipe],
     *,
     week_limit: int = DEFAULT_IMPORT_WEEK_LIMIT,
 ) -> MealPlanDocument:
@@ -311,11 +313,15 @@ def meal_plan_from_dict(payload: dict[str, object], base_dir: Path) -> MealPlanD
 
 def parse_meal_plan_form(
     form: object,
-    recipes: list[RecipeRecord],
+    recipes: list[MealPlanRecipe],
     *,
     base_dir: Path,
 ) -> MealPlanDocument:
     recipe_map = {recipe.id: recipe for recipe in recipes}
+    prepared = _prepare_recipes(recipes)
+    exact_index: dict[str, list[_PreparedRecipe]] = {}
+    for item in prepared:
+        exact_index.setdefault(item.normalized_title, []).append(item)
     week_ids = list(form.getlist("week_id")) if hasattr(form, "getlist") else []
     document = MealPlanDocument(
         weeks=[],
@@ -345,7 +351,16 @@ def parse_meal_plan_form(
             entry.completed = form.get(f"{prefix}__completed") is not None
 
             recipe_ref = str(form.get(f"{prefix}__recipe_ref", "")).strip()
-            recipe = resolve_recipe_reference(recipe_ref, recipe_map, recipes, fallback_title=entry.title)
+            recipe_id = str(form.get(f"{prefix}__recipe_id", "")).strip()
+            recipe = resolve_recipe_reference(
+                recipe_ref,
+                recipe_map,
+                recipes,
+                fallback_title=entry.title,
+                recipe_id=recipe_id,
+                prepared=prepared,
+                exact_index=exact_index,
+            )
             if recipe:
                 entry.recipe_id = recipe.id
                 entry.recipe = recipe
@@ -363,11 +378,20 @@ def parse_meal_plan_form(
 
 def resolve_recipe_reference(
     value: str,
-    recipe_map: dict[str, RecipeRecord],
-    recipes: list[RecipeRecord],
+    recipe_map: dict[str, MealPlanRecipe],
+    recipes: list[MealPlanRecipe],
     *,
     fallback_title: str = "",
-) -> RecipeRecord | None:
+    recipe_id: str = "",
+    prepared: list[_PreparedRecipe] | None = None,
+    exact_index: dict[str, list[_PreparedRecipe]] | None = None,
+) -> MealPlanRecipe | None:
+    explicit_recipe_id = recipe_id.strip()
+    if explicit_recipe_id:
+        recipe = recipe_map.get(explicit_recipe_id)
+        if recipe:
+            return recipe
+
     candidate = value.strip()
     if candidate:
         ref_match = RECIPE_REF_RE.search(candidate)
@@ -380,19 +404,21 @@ def resolve_recipe_reference(
     if not title:
         return None
 
-    prepared = _prepare_recipes(recipes)
-    exact_index: dict[str, list[_PreparedRecipe]] = {}
-    for item in prepared:
-        exact_index.setdefault(item.normalized_title, []).append(item)
-    match = _match_title_to_recipe(title, prepared, exact_index)
+    prepared_recipes = prepared if prepared is not None else _prepare_recipes(recipes)
+    exact_matches = exact_index
+    if exact_matches is None:
+        exact_matches = {}
+        for item in prepared_recipes:
+            exact_matches.setdefault(item.normalized_title, []).append(item)
+    match = _match_title_to_recipe(title, prepared_recipes, exact_matches)
     return match.recipe if match else None
 
 
-def recipe_option_value(recipe: RecipeRecord) -> str:
+def recipe_option_value(recipe: MealPlanRecipe) -> str:
     return f"{recipe.title} - {recipe.cookbook_title} [{recipe.id}]"
 
 
-def hydrate_linked_recipes(document: MealPlanDocument, recipes: list[RecipeRecord]) -> None:
+def hydrate_linked_recipes(document: MealPlanDocument, recipes: list[MealPlanRecipe]) -> None:
     recipe_map = {recipe.id: recipe for recipe in recipes}
     for week in document.weeks:
         for entry in week.entries:
@@ -403,7 +429,7 @@ def hydrate_linked_recipes(document: MealPlanDocument, recipes: list[RecipeRecor
 
 def import_recent_weeks_from_text(
     text: str,
-    recipes: list[RecipeRecord],
+    recipes: list[MealPlanRecipe],
     *,
     base_dir: Path,
     source_path: str,
@@ -514,7 +540,7 @@ def parse_meal_plan_text(text: str) -> list[MealPlanSection]:
     return [section for section in sections if any(group.entries for group in section.groups)]
 
 
-def attach_recipe_matches(sections: list[MealPlanSection], recipes: list[RecipeRecord]) -> None:
+def attach_recipe_matches(sections: list[MealPlanSection], recipes: list[MealPlanRecipe]) -> None:
     prepared = _prepare_recipes(recipes)
     exact_index: dict[str, list[_PreparedRecipe]] = {}
     for item in prepared:
@@ -715,7 +741,7 @@ def _build_entry(
     )
 
 
-def _prepare_recipes(recipes: list[RecipeRecord]) -> list[_PreparedRecipe]:
+def _prepare_recipes(recipes: list[MealPlanRecipe]) -> list[_PreparedRecipe]:
     prepared: list[_PreparedRecipe] = []
     for recipe in recipes:
         normalized_title = normalize_meal_text(recipe.title)

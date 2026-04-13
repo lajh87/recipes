@@ -86,6 +86,13 @@ class RecipeReviewRecord(BaseModel):
     reviewed_at: str | None = None
 
 
+class RecipeReferenceRecord(BaseModel):
+    id: str
+    cookbook_id: str
+    cookbook_title: str
+    title: str
+
+
 class RecipeRecord(BaseModel):
     id: str
     cookbook_id: str

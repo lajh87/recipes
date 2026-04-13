@@ -31,6 +31,7 @@ from app.models import (
     RecipeCollectionItem,
     RecipeExtractionRecord,
     RecipeImageRecord,
+    RecipeReferenceRecord,
     RecipeRecord,
     RecipeReviewRecord,
     RecipeSourceRecord,
@@ -563,6 +564,10 @@ class LibraryRepository:
                 needs_review_count += 1
 
             self.redis.set(self.settings.recipe_key(recipe_id), recipe.model_dump_json())
+            self.redis.set(
+                self.settings.recipe_reference_key(recipe_id),
+                self._build_recipe_reference(recipe).model_dump_json(),
+            )
             self.redis.zadd(self.settings.cookbook_recipe_index_key(cookbook.id), {recipe_id: index})
             for ingredient_name in recipe.ingredient_names:
                 self.redis.sadd(self.settings.ingredient_key(ingredient_name), recipe_id)
@@ -646,6 +651,18 @@ class LibraryRepository:
                 if all(current_ingredient in recipe.ingredient_names for current_ingredient in normalized_ingredients)
             ]
         return filtered
+
+    def list_recipe_references(self, cookbook_id: str | None = None) -> list[RecipeReferenceRecord]:
+        recipe_ids: list[str] = []
+        if cookbook_id:
+            recipe_ids = self.redis.zrange(self.settings.cookbook_recipe_index_key(cookbook_id), 0, -1)
+        else:
+            cookbook_ids = self.redis.zrevrange(self.settings.cookbook_index_key, 0, -1)
+            for current_id in cookbook_ids:
+                recipe_ids.extend(
+                    self.redis.zrange(self.settings.cookbook_recipe_index_key(current_id), 0, -1)
+                )
+        return self._get_recipe_references_by_ids(recipe_ids)
 
     def get_recipe(self, recipe_id: str) -> RecipeRecord | None:
         payload = self.redis.get(self.settings.recipe_key(recipe_id))
@@ -846,6 +863,31 @@ class LibraryRepository:
             )
         return results
 
+    def keyword_recipe_suggestions(
+        self,
+        *,
+        query: str | None,
+        limit: int = 6,
+    ) -> list[RecipeRecord]:
+        query_terms = self._normalize_search_query(query)
+        if not query_terms:
+            return []
+
+        scored: list[tuple[float, RecipeRecord]] = []
+        for recipe in self.list_recipes():
+            score, _terms = self._keyword_score(recipe, query_terms)
+            if score > 0:
+                scored.append((score, recipe))
+
+        scored.sort(
+            key=lambda item: (
+                -item[0],
+                item[1].title.casefold(),
+                item[1].cookbook_title.casefold(),
+            )
+        )
+        return [recipe for _score, recipe in scored[: max(limit, 0)]]
+
     def generate_search_answer(
         self,
         *,
@@ -924,6 +966,7 @@ class LibraryRepository:
                 for ingredient_name in recipe.ingredient_names:
                     self.redis.srem(self.settings.ingredient_key(ingredient_name), recipe_id)
             self.redis.delete(self.settings.recipe_key(recipe_id))
+            self.redis.delete(self.settings.recipe_reference_key(recipe_id))
             self.redis.zrem(self.settings.favorite_recipe_index_key, recipe_id)
             qdrant_ids.append(recipe_id)
         self.redis.delete(self.settings.cookbook_recipe_index_key(cookbook_id))
@@ -1429,6 +1472,39 @@ class LibraryRepository:
             recipes.append(recipe)
         return recipes
 
+    def _get_recipe_references_by_ids(self, recipe_ids: list[str]) -> list[RecipeReferenceRecord]:
+        if not recipe_ids:
+            return []
+
+        reference_payloads = self.redis.mget(
+            [self.settings.recipe_reference_key(recipe_id) for recipe_id in recipe_ids]
+        )
+        missing_ids = [
+            recipe_id
+            for recipe_id, payload in zip(recipe_ids, reference_payloads, strict=False)
+            if not payload
+        ]
+        missing_reference_map: dict[str, RecipeReferenceRecord] = {}
+
+        if missing_ids:
+            recipe_payloads = self.redis.mget([self.settings.recipe_key(recipe_id) for recipe_id in missing_ids])
+            for recipe_id, payload in zip(missing_ids, recipe_payloads, strict=False):
+                if not payload:
+                    continue
+                reference = self._recipe_reference_from_full_payload(payload, recipe_id=recipe_id)
+                missing_reference_map[recipe_id] = reference
+                self.redis.set(self.settings.recipe_reference_key(recipe_id), reference.model_dump_json())
+
+        references: list[RecipeReferenceRecord] = []
+        for recipe_id, payload in zip(recipe_ids, reference_payloads, strict=False):
+            if payload:
+                references.append(self._hydrate_recipe_reference_payload(payload, recipe_id=recipe_id))
+                continue
+            reference = missing_reference_map.get(recipe_id)
+            if reference:
+                references.append(reference)
+        return references
+
     def _hydrate_recipe_payload(
         self,
         payload: str,
@@ -1443,6 +1519,43 @@ class LibraryRepository:
         if recipe.id != recipe_id or recipe.is_favorite != is_favorite:
             recipe = recipe.model_copy(update={"id": recipe_id, "is_favorite": is_favorite})
         return recipe
+
+    def _build_recipe_reference(self, recipe: RecipeRecord) -> RecipeReferenceRecord:
+        return RecipeReferenceRecord(
+            id=recipe.id,
+            cookbook_id=recipe.cookbook_id,
+            cookbook_title=self._clean_metadata_text(recipe.cookbook_title) or recipe.cookbook_title,
+            title=recipe.title,
+        )
+
+    def _recipe_reference_from_full_payload(
+        self,
+        payload: str,
+        *,
+        recipe_id: str,
+    ) -> RecipeReferenceRecord:
+        data = json.loads(payload)
+        cookbook_title = self._clean_metadata_text(str(data.get("cookbook_title", "")).strip())
+        return RecipeReferenceRecord(
+            id=recipe_id,
+            cookbook_id=str(data.get("cookbook_id", "")).strip(),
+            cookbook_title=cookbook_title or str(data.get("cookbook_title", "")).strip(),
+            title=str(data.get("title", "")).strip(),
+        )
+
+    def _hydrate_recipe_reference_payload(
+        self,
+        payload: str,
+        *,
+        recipe_id: str,
+    ) -> RecipeReferenceRecord:
+        reference = RecipeReferenceRecord.model_validate_json(payload)
+        cleaned_cookbook_title = self._clean_metadata_text(reference.cookbook_title)
+        if cleaned_cookbook_title and cleaned_cookbook_title != reference.cookbook_title:
+            reference = reference.model_copy(update={"cookbook_title": cleaned_cookbook_title})
+        if reference.id != recipe_id:
+            reference = reference.model_copy(update={"id": recipe_id})
+        return reference
 
     def _normalize_ingredient_list(self, values: list[str] | None) -> list[str]:
         if not values:

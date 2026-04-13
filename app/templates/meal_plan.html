@@ -14,10 +14,10 @@
         {% endif %}
       </p>
       <div class="page-hero__meta">
-        <span>{{ meal_plan.weeks|length }} weeks</span>
-        <span>{{ meal_plan.slot_count }} planned meals</span>
-        <span>{{ meal_plan.linked_slot_count }} recipe links</span>
-        <span>{{ meal_plan.completed_slot_count }} complete</span>
+        <span data-meal-plan-stat="weeks">{{ meal_plan.weeks|length }} weeks</span>
+        <span data-meal-plan-stat="slot_count">{{ meal_plan.slot_count }} planned meals</span>
+        <span data-meal-plan-stat="linked_slot_count">{{ meal_plan.linked_slot_count }} recipe links</span>
+        <span data-meal-plan-stat="completed_slot_count">{{ meal_plan.completed_slot_count }} complete</span>
       </div>
     </div>
     <div class="detail-navigation">
@@ -25,12 +25,19 @@
     </div>
   </section>
 
-  <form class="meal-plan-form" action="{{ url_for('update_meal_plan_form') }}" method="post" data-meal-plan-form>
+  <form
+    class="meal-plan-form"
+    action="{{ url_for('update_meal_plan_form') }}"
+    method="post"
+    data-meal-plan-form
+    data-meal-plan-suggestions-url="{{ url_for('meal_plan_recipe_suggestions_api') }}"
+  >
     <section class="panel">
       <div class="section-heading">
         <div>
           <h2>Planner</h2>
           <p>Saved to <code>{{ meal_plan.source_path }}</code>. Type a recipe title in the recipe field to attach an optional library recipe to any meal slot.</p>
+          <p class="meal-plan-form__status" data-meal-plan-save-status aria-live="polite">Autosave ready.</p>
         </div>
         <div class="card-actions">
           <button class="button button--secondary" type="submit" name="planner_action" value="add_week">Add Week</button>
@@ -45,6 +52,11 @@
     </datalist>
     <datalist id="meal-plan-meal-options">
       {% for option in meal_options %}
+        <option value="{{ option }}"></option>
+      {% endfor %}
+    </datalist>
+    <datalist id="meal-plan-recipe-options">
+      {% for option in recipe_options %}
         <option value="{{ option }}"></option>
       {% endfor %}
     </datalist>
@@ -103,14 +115,17 @@
                         </label>
                       </td>
                       <td>
+                        <input type="hidden" name="{{ row_prefix }}__recipe_id" value="{{ entry.recipe_id or '' }}" data-meal-plan-recipe-id />
                         <label class="meal-plan-table__field">
                           <span class="visually-hidden">{{ week.title }} linked recipe</span>
                           <input
                             type="text"
                             name="{{ row_prefix }}__recipe_ref"
+                            list="meal-plan-recipe-options"
                             value="{{ entry.recipe_option_value }}"
                             placeholder="Optional recipe link"
                             data-meal-plan-recipe
+                            autocomplete="off"
                           />
                         </label>
                         {% if entry.recipe %}
@@ -157,8 +172,6 @@
                       <td class="meal-plan-table__action">
                         {% if entry.recipe %}
                           <a class="button button--secondary" href="{{ url_for('recipe_page', recipe_id=entry.recipe.id) }}">Open Recipe</a>
-                        {% elif entry.title %}
-                          <a class="button button--secondary" href="{{ url_for('search_page') }}?q={{ entry.title|urlencode }}">Find Recipe</a>
                         {% endif %}
                       </td>
                     </tr>

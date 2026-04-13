@@ -1469,6 +1469,21 @@ input[type="search"]:focus,
   gap: 20px;
 }
 
+.meal-plan-form__status {
+  margin: 8px 0 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.meal-plan-form__status[data-state="saving"],
+.meal-plan-form__status[data-state="dirty"] {
+  color: var(--ink);
+}
+
+.meal-plan-form__status[data-state="error"] {
+  color: var(--warning-ink);
+}
+
 .meal-plan-week {
   display: grid;
   gap: 18px;

@@ -369,13 +369,21 @@ function findBestMealPlanRecipeMatch(value, recipeOptions) {
   scored.sort((a, b) => b.score - a.score);
   const best = scored[0];
   const runnerUp = scored[1];
-  if (best.score < 0.9) {
+  if (best.score < 0.81) {
     return null;
   }
-  if (runnerUp && (best.score - runnerUp.score) < 0.04) {
+  if (runnerUp && (best.score - runnerUp.score) < 0.035) {
     return null;
   }
   return best.option;
+}
+
+function findMealPlanRecipeOptionByLabel(value, recipeOptions) {
+  const label = value.trim();
+  if (!label) {
+    return null;
+  }
+  return recipeOptions.find((option) => option.label === label) || null;
 }
 
 function initMealPlanAutoLink() {
@@ -384,23 +392,197 @@ function initMealPlanAutoLink() {
     return;
   }
 
+  const mealPlanSuggestionsUrl = mealPlanForm.dataset.mealPlanSuggestionsUrl || "";
   const recipeOptions = parseMealPlanRecipeOptions();
-  if (recipeOptions.length === 0) {
-    return;
+  const recipeOptionsDatalist = document.getElementById("meal-plan-recipe-options");
+  const saveStatus = mealPlanForm.querySelector("[data-meal-plan-save-status]");
+  const statLabels = {
+    weeks: "weeks",
+    slot_count: "planned meals",
+    linked_slot_count: "recipe links",
+    completed_slot_count: "complete",
+  };
+  let autosaveTimer = 0;
+  let autosaveController = null;
+  let recipeSuggestionController = null;
+  let recipeSuggestionRequestId = 0;
+  let saveNonce = 0;
+
+  if (recipeOptionsDatalist instanceof HTMLDataListElement) {
+    recipeOptionsDatalist.innerHTML = "";
+  }
+
+  function updateSaveStatus(message, state = "") {
+    if (!(saveStatus instanceof HTMLElement)) {
+      return;
+    }
+    saveStatus.textContent = message;
+    saveStatus.dataset.state = state;
+  }
+
+  function updateMealPlanStats(stats) {
+    if (!stats || typeof stats !== "object") {
+      return;
+    }
+    for (const [key, label] of Object.entries(statLabels)) {
+      const element = document.querySelector(`[data-meal-plan-stat="${CSS.escape(key)}"]`);
+      if (!(element instanceof HTMLElement)) {
+        continue;
+      }
+      const value = Number.parseInt(String(stats[key] ?? ""), 10);
+      if (!Number.isFinite(value)) {
+        continue;
+      }
+      element.textContent = `${value} ${label}`;
+    }
+  }
+
+  function mealPlanRowElements(titleInput) {
+    const row = titleInput.closest("tr");
+    if (!(row instanceof HTMLTableRowElement)) {
+      return null;
+    }
+    const recipeInput = row.querySelector("[data-meal-plan-recipe]");
+    const recipeIdInput = row.querySelector("[data-meal-plan-recipe-id]");
+    if (!(recipeInput instanceof HTMLInputElement) || !(recipeIdInput instanceof HTMLInputElement)) {
+      return null;
+    }
+    return { row, recipeInput, recipeIdInput };
+  }
+
+  function setMealPlanRecipeSelection(recipeInput, recipeIdInput, option, { autofilled, manual }) {
+    recipeInput.value = option.label;
+    recipeIdInput.value = option.id;
+    recipeInput.dataset.autofilled = autofilled ? "true" : "false";
+    recipeInput.dataset.manualEntry = manual ? "true" : "false";
+  }
+
+  function clearMealPlanRecipeSelection(recipeInput, recipeIdInput) {
+    recipeIdInput.value = "";
+    if (recipeInput.dataset.autofilled === "true") {
+      recipeInput.value = "";
+    }
+    recipeInput.dataset.autofilled = "false";
+    recipeInput.dataset.manualEntry = recipeInput.value.trim() ? "true" : "false";
+  }
+
+  function syncMealPlanRecipeInput(recipeInput) {
+    if (!(recipeInput instanceof HTMLInputElement)) {
+      return null;
+    }
+    const row = recipeInput.closest("tr");
+    if (!(row instanceof HTMLTableRowElement)) {
+      return null;
+    }
+    const recipeIdInput = row.querySelector("[data-meal-plan-recipe-id]");
+    if (!(recipeIdInput instanceof HTMLInputElement)) {
+      return null;
+    }
+
+    const exactMatch = findMealPlanRecipeOptionByLabel(recipeInput.value, recipeOptions);
+    if (exactMatch) {
+      setMealPlanRecipeSelection(recipeInput, recipeIdInput, exactMatch, { autofilled: false, manual: true });
+      return exactMatch;
+    }
+
+    if (!recipeInput.value.trim()) {
+      clearMealPlanRecipeSelection(recipeInput, recipeIdInput);
+      return null;
+    }
+
+    recipeIdInput.value = "";
+    recipeInput.dataset.autofilled = "false";
+    recipeInput.dataset.manualEntry = "true";
+    return null;
+  }
+
+  function maybeResolveManualRecipeInput(recipeInput) {
+    const row = recipeInput.closest("tr");
+    if (!(row instanceof HTMLTableRowElement)) {
+      return;
+    }
+    const recipeIdInput = row.querySelector("[data-meal-plan-recipe-id]");
+    if (!(recipeIdInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const exactMatch = syncMealPlanRecipeInput(recipeInput);
+    if (exactMatch || !recipeInput.value.trim()) {
+      return;
+    }
+
+    const fuzzyMatch = findBestMealPlanRecipeMatch(recipeInput.value, recipeOptions);
+    if (fuzzyMatch) {
+      setMealPlanRecipeSelection(recipeInput, recipeIdInput, fuzzyMatch, { autofilled: false, manual: true });
+    }
+  }
+
+  function renderMealPlanRecipeSuggestions(items) {
+    if (!(recipeOptionsDatalist instanceof HTMLDataListElement)) {
+      return;
+    }
+    recipeOptionsDatalist.innerHTML = "";
+    for (const item of items) {
+      if (!item || typeof item.label !== "string" || !item.label.trim()) {
+        continue;
+      }
+      const option = document.createElement("option");
+      option.value = item.label.trim();
+      recipeOptionsDatalist.appendChild(option);
+    }
+  }
+
+  async function loadMealPlanRecipeSuggestions(query) {
+    if (!(recipeOptionsDatalist instanceof HTMLDataListElement)) {
+      return;
+    }
+    const trimmedQuery = query.trim();
+    if (!mealPlanSuggestionsUrl || !trimmedQuery) {
+      renderMealPlanRecipeSuggestions([]);
+      return;
+    }
+
+    recipeSuggestionController?.abort();
+    recipeSuggestionController = new AbortController();
+    const requestId = recipeSuggestionRequestId + 1;
+    recipeSuggestionRequestId = requestId;
+
+    const params = new URLSearchParams({
+      q: trimmedQuery,
+      limit: "6",
+    });
+
+    try {
+      const response = await fetch(`${mealPlanSuggestionsUrl}?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+        signal: recipeSuggestionController.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Meal plan recipe lookup failed with status ${response.status}`);
+      }
+      const payload = await response.json();
+      if (requestId !== recipeSuggestionRequestId) {
+        return;
+      }
+      renderMealPlanRecipeSuggestions(Array.isArray(payload.items) ? payload.items : []);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      console.error(error);
+      renderMealPlanRecipeSuggestions([]);
+    }
   }
 
   function maybeAutoFillRecipe(titleInput) {
     if (!(titleInput instanceof HTMLInputElement)) {
       return;
     }
-    const row = titleInput.closest("tr");
-    if (!(row instanceof HTMLTableRowElement)) {
+    const rowElements = mealPlanRowElements(titleInput);
+    if (!rowElements) {
       return;
     }
-    const recipeInput = row.querySelector("[data-meal-plan-recipe]");
-    if (!(recipeInput instanceof HTMLInputElement)) {
-      return;
-    }
+    const { recipeInput, recipeIdInput } = rowElements;
 
     const currentRecipeValue = recipeInput.value.trim();
     const isManual = recipeInput.dataset.manualEntry === "true";
@@ -411,17 +593,69 @@ function initMealPlanAutoLink() {
 
     const match = findBestMealPlanRecipeMatch(titleInput.value, recipeOptions);
     if (match) {
-      recipeInput.value = match.label;
-      recipeInput.dataset.autofilled = "true";
-      recipeInput.dataset.manualEntry = "false";
+      setMealPlanRecipeSelection(recipeInput, recipeIdInput, match, { autofilled: true, manual: false });
       return;
     }
 
     if (isAutofilled) {
-      recipeInput.value = "";
-      recipeInput.dataset.autofilled = "false";
+      clearMealPlanRecipeSelection(recipeInput, recipeIdInput);
     }
   }
+
+  async function saveMealPlanNow() {
+    window.clearTimeout(autosaveTimer);
+    const currentSave = ++saveNonce;
+    if (autosaveController) {
+      autosaveController.abort();
+    }
+    autosaveController = new AbortController();
+    updateSaveStatus("Saving…", "saving");
+
+    const formData = new FormData(mealPlanForm);
+    formData.set("planner_action", "autosave");
+
+    try {
+      const response = await fetch(mealPlanForm.action, {
+        method: mealPlanForm.method || "POST",
+        body: formData,
+        signal: autosaveController.signal,
+        headers: {
+          Accept: "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Meal plan autosave failed with status ${response.status}`);
+      }
+      const payload = await response.json();
+      if (currentSave !== saveNonce) {
+        return;
+      }
+      updateMealPlanStats(payload.stats);
+      updateSaveStatus(payload.notice || "Saved.", "saved");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      console.error(error);
+      updateSaveStatus("Autosave failed. Changes are still on the page.", "error");
+    }
+  }
+
+  function queueMealPlanSave(delay = 700) {
+    window.clearTimeout(autosaveTimer);
+    updateSaveStatus("Unsaved changes…", "dirty");
+    autosaveTimer = window.setTimeout(() => {
+      saveMealPlanNow();
+    }, delay);
+  }
+
+  mealPlanForm.addEventListener("submit", () => {
+    window.clearTimeout(autosaveTimer);
+    if (autosaveController) {
+      autosaveController.abort();
+    }
+  });
 
   mealPlanForm.addEventListener("input", (event) => {
     const titleInput = event.target.closest("[data-meal-plan-title]");
@@ -430,16 +664,27 @@ function initMealPlanAutoLink() {
       titleInput._mealPlanAutoLinkTimer = window.setTimeout(() => {
         maybeAutoFillRecipe(titleInput);
       }, 180);
+      queueMealPlanSave();
       return;
     }
 
     const recipeInput = event.target.closest("[data-meal-plan-recipe]");
     if (recipeInput instanceof HTMLInputElement) {
-      const hasValue = recipeInput.value.trim() !== "";
-      recipeInput.dataset.manualEntry = hasValue ? "true" : "false";
-      if (!hasValue) {
-        recipeInput.dataset.autofilled = "false";
-      }
+      syncMealPlanRecipeInput(recipeInput);
+      window.clearTimeout(recipeInput._mealPlanSuggestionTimer);
+      recipeInput._mealPlanSuggestionTimer = window.setTimeout(() => {
+        void loadMealPlanRecipeSuggestions(recipeInput.value);
+      }, 120);
+      queueMealPlanSave();
+      return;
+    }
+
+    if (
+      event.target instanceof HTMLInputElement
+      || event.target instanceof HTMLTextAreaElement
+      || event.target instanceof HTMLSelectElement
+    ) {
+      queueMealPlanSave(event.target instanceof HTMLInputElement && event.target.type === "checkbox" ? 120 : 700);
     }
   });
 
@@ -447,8 +692,30 @@ function initMealPlanAutoLink() {
     const titleInput = event.target.closest("[data-meal-plan-title]");
     if (titleInput instanceof HTMLInputElement) {
       maybeAutoFillRecipe(titleInput);
+      queueMealPlanSave(120);
+      return;
+    }
+
+    const recipeInput = event.target.closest("[data-meal-plan-recipe]");
+    if (recipeInput instanceof HTMLInputElement) {
+      maybeResolveManualRecipeInput(recipeInput);
+      void loadMealPlanRecipeSuggestions(recipeInput.value);
+      queueMealPlanSave(120);
     }
   }, true);
+
+  mealPlanForm.addEventListener("focusin", (event) => {
+    const recipeInput = event.target.closest("[data-meal-plan-recipe]");
+    if (recipeInput instanceof HTMLInputElement) {
+      void loadMealPlanRecipeSuggestions(recipeInput.value);
+    }
+  });
+
+  mealPlanForm.querySelectorAll("[data-meal-plan-recipe]").forEach((input) => {
+    if (input instanceof HTMLInputElement) {
+      syncMealPlanRecipeInput(input);
+    }
+  });
 }
 
 function uploadFormElements(form) {

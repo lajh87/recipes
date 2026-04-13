@@ -157,14 +157,18 @@ def cookbook_management_groups(cookbooks: list[Any]) -> list[dict[str, Any]]:
     return [group for group in groups if group["items"]]
 
 
-def load_meal_plan_document(repository: LibraryRepository) -> tuple[MealPlanDocument, list[dict[str, str]]]:
-    recipes = repository.list_recipes()
+def load_meal_plan_document(repository: LibraryRepository) -> tuple[MealPlanDocument, list[str]]:
+    recipes = repository.list_recipe_references()
     meal_plan = load_or_import_meal_plan(
         BASE_DIR.parent,
         recipes,
         week_limit=DEFAULT_IMPORT_WEEK_LIMIT,
     )
-    return meal_plan, []
+    recipe_options = [
+        recipe_option_value(recipe)
+        for recipe in sorted(recipes, key=lambda item: (item.title.casefold(), item.cookbook_title.casefold()))
+    ]
+    return meal_plan, recipe_options
 
 
 def enrich_cookbooks_for_management(
@@ -689,13 +693,14 @@ async def meal_plan_page(
 @app.post("/meal-plan")
 async def update_meal_plan_form(
     request: Request,
-) -> RedirectResponse:
+) -> Response:
     repository = get_repository(request)
     form = await request.form()
     planner_action = str(form.get("planner_action", "save")).strip().lower()
+    recipes = repository.list_recipe_references()
     meal_plan = parse_meal_plan_form(
         form,
-        repository.list_recipes(),
+        recipes,
         base_dir=BASE_DIR.parent,
     )
 
@@ -719,6 +724,24 @@ async def update_meal_plan_form(
         notice_text = "Removed the week."
     else:
         notice_text = "Meal plan updated."
+
+    wants_json = (
+        request.headers.get("x-requested-with", "").lower() == "xmlhttprequest"
+        or "application/json" in request.headers.get("accept", "").lower()
+    )
+    if wants_json:
+        return JSONResponse(
+            {
+                "ok": True,
+                "notice": notice_text,
+                "stats": {
+                    "weeks": len(meal_plan.weeks),
+                    "slot_count": meal_plan.slot_count,
+                    "linked_slot_count": meal_plan.linked_slot_count,
+                    "completed_slot_count": meal_plan.completed_slot_count,
+                },
+            }
+        )
     return redirect_with_notice("/meal-plan", notice_text)
 
 
@@ -1298,4 +1321,26 @@ async def search_api(
         "ingredients": selected_ingredients,
         "answer": None,
         "items": [item.model_dump() for item in results],
+    }
+
+
+@app.get("/api/meal-plan/recipe-suggestions")
+async def meal_plan_recipe_suggestions_api(
+    request: Request,
+    q: str | None = Query(default=None),
+    limit: int = Query(default=6, ge=1, le=10),
+) -> dict[str, Any]:
+    repository = get_repository(request)
+    items = [
+        {
+            "id": recipe.id,
+            "title": recipe.title,
+            "cookbook_title": recipe.cookbook_title,
+            "label": recipe_option_value(recipe),
+        }
+        for recipe in repository.keyword_recipe_suggestions(query=q, limit=limit)
+    ]
+    return {
+        "query": q or "",
+        "items": items,
     }

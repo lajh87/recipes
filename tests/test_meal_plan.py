@@ -12,6 +12,7 @@ from app.meal_plan import (
     resolve_recipe_reference,
 )
 from app.models import RecipeRecord
+from app.repository import LibraryRepository
 
 
 def build_recipe(recipe_id: str, title: str, cookbook_title: str = "Book") -> RecipeRecord:
@@ -118,6 +119,7 @@ class MealPlanTests(unittest.TestCase):
                 f"entry__{week.id}__{row.id}__weekday": "Monday",
                 f"entry__{week.id}__{row.id}__meal": "Dinner",
                 f"entry__{week.id}__{row.id}__completed": "true",
+                f"entry__{week.id}__{row.id}__recipe_id": "recipe-1",
                 f"entry__{week.id}__{row.id}__recipe_ref": recipe_option_value(recipes[0]),
             }
         )
@@ -131,6 +133,21 @@ class MealPlanTests(unittest.TestCase):
         self.assertEqual(entry.meal, "Dinner")
         self.assertTrue(entry.completed)
         self.assertEqual(entry.recipe_id, "recipe-1")
+
+    def test_resolve_recipe_reference_prefers_explicit_recipe_id(self) -> None:
+        recipes = [build_recipe("recipe-1", "Fish Tacos with Mango Lime", "Simple")]
+        recipe_map = {recipe.id: recipe for recipe in recipes}
+
+        recipe = resolve_recipe_reference(
+            "",
+            recipe_map,
+            recipes,
+            fallback_title="Something else entirely",
+            recipe_id="recipe-1",
+        )
+
+        self.assertIsNotNone(recipe)
+        self.assertEqual(recipe.id, "recipe-1")
 
     def test_load_or_import_meal_plan_persists_imported_document(self) -> None:
         recipes = [build_recipe("recipe-1", "Fish Tacos with Mango Lime", "Simple")]
@@ -146,6 +163,18 @@ class MealPlanTests(unittest.TestCase):
             saved_path = data_dir / "meal-plan.json"
             self.assertTrue(saved_path.exists())
             self.assertEqual(document.weeks[0].entries[0].recipe_id, "recipe-1")
+
+    def test_keyword_recipe_suggestions_returns_short_keyword_ranked_list(self) -> None:
+        repository = object.__new__(LibraryRepository)
+        repository.list_recipes = lambda: [  # type: ignore[method-assign]
+            build_recipe("recipe-1", "Fish Tacos with Mango Lime", "Simple"),
+            build_recipe("recipe-2", "Mango Chutney Chicken", "Book"),
+            build_recipe("recipe-3", "Tomato Pasta", "Book"),
+        ]
+
+        suggestions = repository.keyword_recipe_suggestions(query="mango", limit=2)
+
+        self.assertEqual([item.id for item in suggestions], ["recipe-1", "recipe-2"])
 
 
 if __name__ == "__main__":

@@ -660,6 +660,14 @@ def order_recipe_sections(
 async def index(
     request: Request,
     notice: str | None = Query(default=None),
+) -> HTMLResponse:
+    return await meal_plan_page(request=request, notice=notice)
+
+
+@app.get("/library", response_class=HTMLResponse)
+async def library_page(
+    request: Request,
+    notice: str | None = Query(default=None),
     sort: str = Query(default="title"),
 ) -> HTMLResponse:
     repository = get_repository(request)

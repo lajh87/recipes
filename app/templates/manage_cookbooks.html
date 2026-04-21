@@ -107,7 +107,7 @@
         </div>
         <div class="card-actions">
           <button class="button" type="submit">Save All Metadata</button>
-          <a class="button button--secondary" href="{{ url_for('index') }}?sort={{ cookbook_sort|urlencode }}">Back To Library</a>
+          <a class="button button--secondary" href="{{ url_for('library_page') }}?sort={{ cookbook_sort|urlencode }}">Back To Library</a>
         </div>
       {% else %}
         <article class="empty-state">

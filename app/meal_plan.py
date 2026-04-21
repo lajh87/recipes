@@ -266,7 +266,7 @@ def append_blank_week(document: MealPlanDocument) -> None:
     if next_start_on:
         week.start_on = next_start_on
         week.legacy_title = ""
-    document.weeks.append(week)
+    document.weeks.insert(0, week)
 
 
 def create_blank_row(*, weekday: str = "", meal: str = "") -> MealPlanRow:
@@ -279,6 +279,7 @@ def create_blank_row(*, weekday: str = "", meal: str = "") -> MealPlanRow:
 
 def append_blank_row(week: MealPlanWeek) -> None:
     week.entries.append(create_blank_row())
+    sort_week_entries(week)
 
 
 def remove_week(document: MealPlanDocument, week_id: str) -> None:
@@ -463,6 +464,7 @@ def parse_meal_plan_form(
 
         if not week.entries:
             week.entries.append(create_blank_row())
+        sort_week_entries(week)
         document.weeks.append(week)
 
     if not document.weeks:
@@ -716,6 +718,7 @@ def _section_to_week(section: MealPlanSection) -> MealPlanWeek:
     if not week.entries:
         week.entries.append(create_blank_row())
     week.notes = "\n".join(line for line in week_notes if line).strip()
+    sort_week_entries(week)
     return week
 
 
@@ -841,7 +844,57 @@ def _week_from_dict(payload: dict[str, object]) -> MealPlanWeek:
                     week.entries.append(entry)
     if not week.entries:
         week.entries.append(create_blank_row())
+    sort_week_entries(week)
     return week
+
+
+def sort_week_entries(week: MealPlanWeek) -> None:
+    indexed_entries = list(enumerate(week.entries))
+    indexed_entries.sort(
+        key=lambda item: _week_entry_sort_key(week, item[1], item[0]),
+    )
+    week.entries = [entry for _index, entry in indexed_entries]
+
+
+def _week_entry_sort_key(
+    week: MealPlanWeek,
+    entry: MealPlanRow,
+    original_index: int,
+) -> tuple[int, int, int]:
+    return (
+        _weekday_sort_offset(entry.weekday, week.start_on),
+        _meal_sort_order(entry.meal),
+        original_index,
+    )
+
+
+def _weekday_sort_offset(weekday: str, week_start_on: str) -> int:
+    normalized_weekday = normalize_weekday_label(weekday)
+    if not normalized_weekday:
+        return len(WEEKDAYS) + 1
+
+    weekday_positions = {label: index for index, (_slug, label) in enumerate(WEEKDAYS)}
+    weekday_position = weekday_positions.get(normalized_weekday)
+    if weekday_position is None:
+        return len(WEEKDAYS) + 1
+
+    start_weekday_position = 6
+    if week_start_on:
+        try:
+            start_weekday_position = date.fromisoformat(week_start_on).weekday()
+        except ValueError:
+            start_weekday_position = 6
+
+    return (weekday_position - start_weekday_position) % len(WEEKDAYS)
+
+
+def _meal_sort_order(meal: str) -> int:
+    normalized_meal = normalize_meal_label(meal)
+    if not normalized_meal:
+        return len(MEALS) + 1
+
+    meal_positions = {label: index for index, (_slug, label) in enumerate(MEALS)}
+    return meal_positions.get(normalized_meal, len(MEALS) + 1)
 
 
 def _parse_bulleted_entry(text: str) -> MealPlanEntry | None:
@@ -1195,11 +1248,16 @@ def format_week_title(value: str) -> str:
 
 
 def _next_week_start_on(weeks: list[MealPlanWeek]) -> str:
-    for week in reversed(weeks):
+    for week in weeks:
         if not week.start_on:
             continue
-        return (date.fromisoformat(week.start_on) + timedelta(days=7)).isoformat()
+        parsed = date.fromisoformat(week.start_on)
+        return _week_start_sunday(parsed + timedelta(days=7)).isoformat()
     return ""
+
+
+def _week_start_sunday(value: date) -> date:
+    return value - timedelta(days=(value.weekday() + 1) % 7)
 
 
 def _shopping_ingredients(recipe: RecipeRecord) -> list[tuple[str, str]]:

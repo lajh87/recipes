@@ -11,8 +11,8 @@
       <header class="site-header">
         <a class="site-brand" href="{{ url_for('index') }}">{{ app_name }}</a>
         <nav class="site-nav">
-          <a href="{{ url_for('index') }}">Library</a>
           <a href="{{ url_for('meal_plan_page') }}">Meal Plan</a>
+          <a href="{{ url_for('library_page') }}">Library</a>
         </nav>
         <form class="site-search" action="{{ url_for('search_page') }}" method="get">
           <input class="site-search__input" type="search" name="q" placeholder="Search recipes" value="{{ search_query if search_query is defined else '' }}" />

@@ -97,7 +97,6 @@
 
           <div class="meal-plan-week__entries" data-meal-plan-week-entries>
             <div class="meal-plan-week__columns" aria-hidden="true">
-              <span>Move</span>
               <span>Day</span>
               <span>Slot</span>
               <span>Recipe or Item</span>
@@ -109,18 +108,6 @@
               <section class="meal-plan-row{% if entry.completed and entry.title %} is-complete{% endif %}" data-meal-plan-row>
                 <input type="hidden" name="week_entry_id__{{ week.id }}" value="{{ entry.id }}" />
                 <input type="hidden" name="{{ row_prefix }}__recipe_id" value="{{ entry.recipe_id or '' }}" data-meal-plan-recipe-id />
-                <div class="meal-plan-row__drag">
-                  <button
-                    class="meal-plan-row__drag-handle"
-                    type="button"
-                    draggable="true"
-                    data-meal-plan-drag-handle
-                    aria-label="Drag to reorder this meal"
-                    title="Drag to reorder this meal"
-                  >
-                    Drag
-                  </button>
-                </div>
                 <div class="meal-plan-row__field">
                   <label class="meal-plan-row__label meal-plan-row__label--column" for="meal-weekday-{{ week.id }}-{{ entry.id }}">Day</label>
                   <input

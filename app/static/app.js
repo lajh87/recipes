@@ -423,9 +423,6 @@ function initMealPlanAutoLink() {
   let recipeSuggestionController = null;
   let recipeSuggestionRequestId = 0;
   let saveNonce = 0;
-  let draggingRow = null;
-  let dragSourceWeekEntries = null;
-  let dragStartOrder = "";
 
   if (recipeOptionsDatalist instanceof HTMLDataListElement) {
     recipeOptionsDatalist.innerHTML = "";
@@ -706,49 +703,120 @@ function initMealPlanAutoLink() {
     }, delay);
   }
 
-  function mealPlanWeekOrder(weekEntries) {
-    if (!(weekEntries instanceof HTMLElement)) {
+  function normalizeMealPlanWeekday(value) {
+    const cleaned = value.trim().toLowerCase();
+    if (!cleaned) {
       return "";
     }
-    return Array.from(weekEntries.querySelectorAll("[data-meal-plan-row]"))
-      .map((row) => row.querySelector('input[name^="week_entry_id__"]'))
-      .filter((input) => input instanceof HTMLInputElement)
-      .map((input) => input.value)
-      .join("|");
+
+    const weekdayAliases = new Map([
+      ["monday", "Monday"],
+      ["mon", "Monday"],
+      ["tuesday", "Tuesday"],
+      ["tue", "Tuesday"],
+      ["tues", "Tuesday"],
+      ["wednesday", "Wednesday"],
+      ["wed", "Wednesday"],
+      ["thursday", "Thursday"],
+      ["thu", "Thursday"],
+      ["thur", "Thursday"],
+      ["thurs", "Thursday"],
+      ["friday", "Friday"],
+      ["fri", "Friday"],
+      ["saturday", "Saturday"],
+      ["sat", "Saturday"],
+      ["sunday", "Sunday"],
+      ["sun", "Sunday"],
+    ]);
+
+    return weekdayAliases.get(cleaned) || value.trim();
   }
 
-  function mealPlanDragTargetRow(weekEntries, clientY) {
+  function normalizeMealPlanMeal(value) {
+    const cleaned = value.trim().toLowerCase();
+    if (!cleaned) {
+      return "";
+    }
+
+    const mealAliases = new Map([
+      ["breakfast", "Breakfast"],
+      ["lunch", "Lunch"],
+      ["dinner", "Dinner"],
+    ]);
+
+    return mealAliases.get(cleaned) || value.trim();
+  }
+
+  function mealPlanWeekStartIndex(weekEntries) {
+    const week = weekEntries?.closest(".meal-plan-week");
+    if (!(week instanceof HTMLElement)) {
+      return 0;
+    }
+
+    const startInput = week.querySelector('input[name^="week_start_on__"]');
+    if (!(startInput instanceof HTMLInputElement) || !startInput.value) {
+      return 0;
+    }
+
+    const parsed = new Date(`${startInput.value}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      return 0;
+    }
+
+    return parsed.getDay();
+  }
+
+  function mealPlanRowSortKey(row, weekStartIndex, originalIndex) {
+    const weekdayInput = row.querySelector('input[name$="__weekday"]');
+    const mealInput = row.querySelector('input[name$="__meal"]');
+    const weekday = weekdayInput instanceof HTMLInputElement ? normalizeMealPlanWeekday(weekdayInput.value) : "";
+    const meal = mealInput instanceof HTMLInputElement ? normalizeMealPlanMeal(mealInput.value) : "";
+    const weekdayOrder = new Map([
+      ["Sunday", 0],
+      ["Monday", 1],
+      ["Tuesday", 2],
+      ["Wednesday", 3],
+      ["Thursday", 4],
+      ["Friday", 5],
+      ["Saturday", 6],
+    ]);
+    const mealOrder = new Map([
+      ["Breakfast", 0],
+      ["Lunch", 1],
+      ["Dinner", 2],
+    ]);
+    const weekdayIndex = weekdayOrder.get(weekday);
+    const mealIndex = mealOrder.get(meal);
+
+    return {
+      weekdayOffset: Number.isInteger(weekdayIndex) ? ((weekdayIndex - weekStartIndex) + 7) % 7 : 8,
+      mealOffset: Number.isInteger(mealIndex) ? mealIndex : 4,
+      originalIndex,
+    };
+  }
+
+  function sortMealPlanWeekEntries(weekEntries) {
     if (!(weekEntries instanceof HTMLElement)) {
-      return null;
+      return;
     }
 
+    const weekStartIndex = mealPlanWeekStartIndex(weekEntries);
     const rows = Array.from(weekEntries.querySelectorAll("[data-meal-plan-row]"))
-      .filter((row) => row instanceof HTMLElement && row !== draggingRow);
-    let targetRow = null;
-    let targetOffset = Number.NEGATIVE_INFINITY;
+      .filter((row) => row instanceof HTMLElement);
+    const sortedRows = rows
+      .map((row, originalIndex) => ({
+        row,
+        key: mealPlanRowSortKey(row, weekStartIndex, originalIndex),
+      }))
+      .sort((left, right) => (
+        left.key.weekdayOffset - right.key.weekdayOffset
+        || left.key.mealOffset - right.key.mealOffset
+        || left.key.originalIndex - right.key.originalIndex
+      ));
 
-    for (const row of rows) {
-      const bounds = row.getBoundingClientRect();
-      const offset = clientY - bounds.top - (bounds.height / 2);
-      if (offset < 0 && offset > targetOffset) {
-        targetOffset = offset;
-        targetRow = row;
-      }
+    for (const item of sortedRows) {
+      weekEntries.appendChild(item.row);
     }
-
-    return targetRow;
-  }
-
-  function cleanupMealPlanDragState() {
-    if (draggingRow instanceof HTMLElement) {
-      draggingRow.classList.remove("is-dragging");
-    }
-    if (dragSourceWeekEntries instanceof HTMLElement) {
-      dragSourceWeekEntries.classList.remove("is-drag-target");
-    }
-    draggingRow = null;
-    dragSourceWeekEntries = null;
-    dragStartOrder = "";
   }
 
   mealPlanForm.addEventListener("submit", () => {
@@ -810,78 +878,25 @@ function initMealPlanAutoLink() {
   mealPlanForm.querySelectorAll('.shopping-checklist__item input[type="checkbox"]').forEach((input) => {
     syncShoppingChecklistItemState(input);
   });
-
-  mealPlanForm.addEventListener("dragstart", (event) => {
-    if (!(event.target instanceof Element)) {
-      return;
-    }
-    const handle = event.target.closest("[data-meal-plan-drag-handle]");
-    if (!(handle instanceof HTMLElement)) {
-      return;
-    }
-
-    const row = handle.closest("[data-meal-plan-row]");
-    const weekEntries = row?.closest("[data-meal-plan-week-entries]");
-    if (!(row instanceof HTMLElement) || !(weekEntries instanceof HTMLElement) || !event.dataTransfer) {
-      return;
-    }
-
-    draggingRow = row;
-    dragSourceWeekEntries = weekEntries;
-    dragStartOrder = mealPlanWeekOrder(weekEntries);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", dragStartOrder);
-    event.dataTransfer.setDragImage(row, 24, 24);
-    row.classList.add("is-dragging");
-    weekEntries.classList.add("is-drag-target");
+  mealPlanForm.querySelectorAll("[data-meal-plan-week-entries]").forEach((weekEntries) => {
+    sortMealPlanWeekEntries(weekEntries);
   });
 
-  mealPlanForm.addEventListener("dragover", (event) => {
-    if (!(event.target instanceof Element)) {
+  mealPlanForm.addEventListener("change", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
       return;
     }
-    const weekEntries = event.target.closest("[data-meal-plan-week-entries]");
+
     if (
-      !(draggingRow instanceof HTMLElement)
-      || !(dragSourceWeekEntries instanceof HTMLElement)
-      || !(weekEntries instanceof HTMLElement)
-      || weekEntries !== dragSourceWeekEntries
+      !event.target.matches('input[name^="week_start_on__"], input[name$="__weekday"], input[name$="__meal"]')
     ) {
       return;
     }
 
-    event.preventDefault();
-    const targetRow = mealPlanDragTargetRow(weekEntries, event.clientY);
-    if (targetRow) {
-      weekEntries.insertBefore(draggingRow, targetRow);
-      return;
-    }
-    weekEntries.append(draggingRow);
-  });
-
-  mealPlanForm.addEventListener("drop", (event) => {
-    if (!(event.target instanceof Element)) {
-      return;
-    }
-    const weekEntries = event.target.closest("[data-meal-plan-week-entries]");
-    if (
-      !(draggingRow instanceof HTMLElement)
-      || !(dragSourceWeekEntries instanceof HTMLElement)
-      || !(weekEntries instanceof HTMLElement)
-      || weekEntries !== dragSourceWeekEntries
-    ) {
-      return;
-    }
-    event.preventDefault();
-  });
-
-  mealPlanForm.addEventListener("dragend", () => {
-    const startOrder = dragStartOrder;
-    const finalOrder = mealPlanWeekOrder(dragSourceWeekEntries);
-    cleanupMealPlanDragState();
-    if (startOrder && finalOrder && startOrder !== finalOrder) {
-      queueMealPlanSave(120);
-    }
+    const weekEntries = event.target.closest("[data-meal-plan-week-entries]")
+      || event.target.closest(".meal-plan-week")?.querySelector("[data-meal-plan-week-entries]");
+    sortMealPlanWeekEntries(weekEntries);
+    queueMealPlanSave(120);
   });
 }
 

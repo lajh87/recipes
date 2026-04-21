@@ -4,6 +4,7 @@ import tempfile
 
 from app.meal_plan import (
     append_blank_row,
+    append_blank_week,
     build_week_shopping_list,
     create_blank_week,
     import_recent_weeks_from_text,
@@ -143,7 +144,7 @@ class MealPlanTests(unittest.TestCase):
         self.assertTrue(entry.completed)
         self.assertEqual(entry.recipe_id, "recipe-1")
 
-    def test_parse_meal_plan_form_preserves_submitted_row_order_within_week(self) -> None:
+    def test_parse_meal_plan_form_sorts_rows_by_date_derived_from_week_start(self) -> None:
         recipes = [
             build_recipe("recipe-1", "Fish Tacos with Mango Lime", "Simple"),
             build_recipe("recipe-2", "Tomato Pasta", "Simple"),
@@ -154,6 +155,7 @@ class MealPlanTests(unittest.TestCase):
         form = FakeForm(
             {
                 "week_id": [week.id],
+                f"week_start_on__{week.id}": "2026-04-19",
                 f"week_entry_id__{week.id}": [second_row.id, first_row.id],
                 f"entry__{week.id}__{first_row.id}__title": "Fish Tacos with Mango Lime",
                 f"entry__{week.id}__{first_row.id}__weekday": "Monday",
@@ -170,11 +172,42 @@ class MealPlanTests(unittest.TestCase):
 
         self.assertEqual(
             [entry.id for entry in document.weeks[0].entries],
-            [second_row.id, first_row.id],
+            [first_row.id, second_row.id],
         )
         self.assertEqual(
             [entry.title for entry in document.weeks[0].entries],
-            ["Tomato Pasta", "Fish Tacos with Mango Lime"],
+            ["Fish Tacos with Mango Lime", "Tomato Pasta"],
+        )
+
+    def test_parse_meal_plan_form_uses_start_day_as_order_anchor(self) -> None:
+        recipes = [
+            build_recipe("recipe-1", "Tuesday Pasta", "Simple"),
+            build_recipe("recipe-2", "Monday Curry", "Simple"),
+        ]
+        week = create_blank_week("Week 1")
+        append_blank_row(week)
+        first_row, second_row = week.entries[:2]
+        form = FakeForm(
+            {
+                "week_id": [week.id],
+                f"week_start_on__{week.id}": "2026-04-14",
+                f"week_entry_id__{week.id}": [second_row.id, first_row.id],
+                f"entry__{week.id}__{first_row.id}__title": "Tuesday Pasta",
+                f"entry__{week.id}__{first_row.id}__weekday": "Tuesday",
+                f"entry__{week.id}__{first_row.id}__meal": "Dinner",
+                f"entry__{week.id}__{first_row.id}__recipe_id": "recipe-1",
+                f"entry__{week.id}__{second_row.id}__title": "Monday Curry",
+                f"entry__{week.id}__{second_row.id}__weekday": "Monday",
+                f"entry__{week.id}__{second_row.id}__meal": "Dinner",
+                f"entry__{week.id}__{second_row.id}__recipe_id": "recipe-2",
+            }
+        )
+
+        document = parse_meal_plan_form(form, recipes, base_dir=Path("/tmp"))
+
+        self.assertEqual(
+            [entry.title for entry in document.weeks[0].entries],
+            ["Tuesday Pasta", "Monday Curry"],
         )
 
     def test_resolve_recipe_reference_prefers_explicit_recipe_id(self) -> None:
@@ -310,6 +343,59 @@ class MealPlanTests(unittest.TestCase):
         self.assertEqual(
             [item.name for item in shopping_list],
             ["1.5 litres organic chicken, ham or vegetable stock"],
+        )
+
+    def test_append_blank_week_inserts_new_week_at_top(self) -> None:
+        document = load_or_import_meal_plan(
+            Path("/tmp"),
+            [],
+            load_payload=lambda: '{"weeks":[{"title":"2026-04-06","start_on":"2026-04-06","entries":[]},{"title":"2026-03-30","start_on":"2026-03-30","entries":[]}],"source_path":"Redis"}',
+        )
+
+        existing_ids = [week.id for week in document.weeks]
+
+        append_blank_week(document)
+
+        self.assertEqual(len(document.weeks), 3)
+        self.assertNotIn(document.weeks[0].id, existing_ids)
+        self.assertEqual([week.id for week in document.weeks[1:]], existing_ids)
+
+    def test_append_blank_week_defaults_to_next_sunday_after_latest_week(self) -> None:
+        document = load_or_import_meal_plan(
+            Path("/tmp"),
+            [],
+            load_payload=lambda: '{"weeks":[{"title":"2026-04-14","start_on":"2026-04-14","entries":[]},{"title":"2026-04-05","start_on":"2026-04-05","entries":[]}],"source_path":"Redis"}',
+        )
+
+        append_blank_week(document)
+
+        self.assertEqual(document.weeks[0].start_on, "2026-04-19")
+        self.assertEqual(document.weeks[0].title, "Week of 19 April 2026")
+
+    def test_load_or_import_meal_plan_sorts_existing_entries_by_derived_date(self) -> None:
+        document = load_or_import_meal_plan(
+            Path("/tmp"),
+            [],
+            load_payload=lambda: """
+            {
+              "weeks": [
+                {
+                  "id": "week-1",
+                  "title": "2026-04-19",
+                  "start_on": "2026-04-19",
+                  "entries": [
+                    {"id": "row-2", "weekday": "Tuesday", "meal": "Dinner", "title": "Tuesday Pasta", "completed": false, "recipe_id": null},
+                    {"id": "row-1", "weekday": "Monday", "meal": "Dinner", "title": "Monday Curry", "completed": false, "recipe_id": null}
+                  ]
+                }
+              ]
+            }
+            """,
+        )
+
+        self.assertEqual(
+            [entry.title for entry in document.weeks[0].entries],
+            ["Monday Curry", "Tuesday Pasta"],
         )
 
 

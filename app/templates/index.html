@@ -67,7 +67,7 @@
         <p>Upload books into a staged state, then open one when you are ready to work through it.</p>
       </div>
       <div class="library-actions">
-        <form class="sort-inline" action="{{ url_for('index') }}" method="get">
+        <form class="sort-inline" action="{{ url_for('library_page') }}" method="get">
           <label class="sort-inline__label" for="cookbook-sort">Sort By</label>
           <select id="cookbook-sort" name="sort" class="review-select sort-inline__select" onchange="this.form.submit()">
             {% for option in cookbook_sort_options %}

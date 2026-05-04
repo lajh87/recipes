@@ -186,7 +186,12 @@
                     {% for item in week.shopping_list %}
                       <li>
                         <label class="shopping-checklist__item">
-                          <input type="checkbox" />
+                          <input
+                            type="checkbox"
+                            name="week_shopping_checked__{{ week.id }}"
+                            value="{{ item.key }}"
+                            {{ 'checked' if item.checked else '' }}
+                          />
                           <span class="shopping-checklist__content">
                             <span class="shopping-checklist__name">{{ item.name }}</span>
                             <span class="shopping-checklist__recipes">{{ item.recipe_summary }}</span>

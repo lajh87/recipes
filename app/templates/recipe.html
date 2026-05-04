@@ -43,6 +43,12 @@
       {% set recipe_toggle_icon = '⚑' %}
       {% set recipe_toggle_button_class = 'recipe-toggle--want recipe-toggle--detail' %}
       {% include "_recipe_toggle_button.html" %}
+      <form class="recipe-action-form" action="{{ url_for('add_recipe_to_latest_meal_plan_week', recipe_id=recipe.id) }}" method="post">
+        <input type="hidden" name="return_to" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
+        <button class="recipe-toggle recipe-toggle--detail" type="submit" aria-label="Add to meal plan" title="Add to meal plan">
+          <span aria-hidden="true">+</span>
+        </button>
+      </form>
       {% if previous_recipe %}
         <a class="button button--secondary" href="{{ url_for('recipe_page', recipe_id=previous_recipe.id) }}{% if selected_collection_slug %}?collection={{ selected_collection_slug }}{% endif %}">Previous</a>
       {% endif %}

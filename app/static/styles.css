@@ -814,6 +814,18 @@ input[type="search"]:focus,
   line-height: 1.5;
 }
 
+.search-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.search-filter {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
 .uploader__dropzone {
   display: grid;
   gap: 8px;
@@ -1043,7 +1055,8 @@ input[type="search"]:focus,
   align-items: flex-start;
 }
 
-.recipe-toggle-form {
+.recipe-toggle-form,
+.recipe-action-form {
   margin: 0;
 }
 

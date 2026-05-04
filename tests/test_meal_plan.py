@@ -5,12 +5,14 @@ import tempfile
 from app.meal_plan import (
     append_blank_row,
     append_blank_week,
+    add_recipe_to_latest_week,
     build_week_shopping_list,
     create_blank_week,
     import_recent_weeks_from_text,
     normalize_week_start_value,
     load_or_import_meal_plan,
     parse_meal_plan_form,
+    populate_week_shopping_lists,
     recipe_option_value,
     resolve_recipe_reference,
 )
@@ -345,6 +347,56 @@ class MealPlanTests(unittest.TestCase):
             ["1.5 litres organic chicken, ham or vegetable stock"],
         )
 
+    def test_parse_meal_plan_form_preserves_checked_shopping_items(self) -> None:
+        recipes = [build_recipe("recipe-1", "Fish Tacos with Mango Lime", "Simple")]
+        week = create_blank_week("Week 1")
+        row = week.entries[0]
+        form = FakeForm(
+            {
+                "week_id": [week.id],
+                f"week_entry_id__{week.id}": [row.id],
+                f"entry__{week.id}__{row.id}__title": "Fish Tacos with Mango Lime",
+                f"entry__{week.id}__{row.id}__recipe_id": "recipe-1",
+                f"week_shopping_checked__{week.id}": ["lime", "mango"],
+            }
+        )
+
+        document = parse_meal_plan_form(form, recipes, base_dir=Path("/tmp"))
+
+        self.assertEqual(document.weeks[0].shopping_checked_items, {"lime", "mango"})
+
+    def test_populate_week_shopping_lists_marks_checked_items_and_prunes_removed_items(self) -> None:
+        week = create_blank_week("2026-04-14")
+        week.entries = [week.entries[0]]
+        week.entries[0].title = "Fish Tacos with Mango Lime"
+        week.entries[0].recipe_id = "recipe-1"
+        week.shopping_checked_items = {"lime", "missing"}
+        document = load_or_import_meal_plan(
+            Path("/tmp"),
+            [],
+            load_payload=lambda: '{"weeks":[]}',
+        )
+        document.weeks = [week]
+
+        populate_week_shopping_lists(
+            document,
+            [
+                build_recipe(
+                    "recipe-1",
+                    "Fish Tacos with Mango Lime",
+                    "Simple",
+                    ingredients=[
+                        {"raw": "1 lime", "normalized_name": "lime", "canonical_name": "lime"},
+                        {"raw": "2 mangos", "normalized_name": "mango", "canonical_name": "mango"},
+                    ],
+                )
+            ],
+        )
+
+        checked_by_key = {item.key: item.checked for item in document.weeks[0].shopping_list}
+        self.assertEqual(document.weeks[0].shopping_checked_items, {"lime"})
+        self.assertEqual(checked_by_key, {"lime": True, "mango": False})
+
     def test_append_blank_week_inserts_new_week_at_top(self) -> None:
         document = load_or_import_meal_plan(
             Path("/tmp"),
@@ -371,6 +423,48 @@ class MealPlanTests(unittest.TestCase):
 
         self.assertEqual(document.weeks[0].start_on, "2026-04-19")
         self.assertEqual(document.weeks[0].title, "Week of 19 April 2026")
+
+    def test_add_recipe_to_latest_week_uses_first_empty_row(self) -> None:
+        recipe = build_recipe("recipe-1", "Fish Tacos with Mango Lime", "Simple")
+        document = load_or_import_meal_plan(
+            Path("/tmp"),
+            [recipe],
+            load_payload=lambda: '{"weeks":[{"id":"week-1","title":"2026-04-19","start_on":"2026-04-19","entries":[]}],"source_path":"Redis"}',
+        )
+
+        row = add_recipe_to_latest_week(document, recipe)
+
+        self.assertEqual(len(document.weeks[0].entries), 1)
+        self.assertEqual(row.title, "Fish Tacos with Mango Lime")
+        self.assertEqual(row.recipe_id, "recipe-1")
+        self.assertEqual(row.meal, "Dinner")
+
+    def test_add_recipe_to_latest_week_appends_when_week_has_planned_rows(self) -> None:
+        recipe = build_recipe("recipe-2", "Tomato Pasta", "Simple")
+        document = load_or_import_meal_plan(
+            Path("/tmp"),
+            [recipe],
+            load_payload=lambda: """
+            {
+              "weeks": [
+                {
+                  "id": "week-1",
+                  "title": "2026-04-19",
+                  "start_on": "2026-04-19",
+                  "entries": [
+                    {"id": "row-1", "weekday": "Monday", "meal": "Dinner", "title": "Monday Curry", "completed": false, "recipe_id": null}
+                  ]
+                }
+              ]
+            }
+            """,
+        )
+
+        row = add_recipe_to_latest_week(document, recipe)
+
+        self.assertEqual(len(document.weeks[0].entries), 2)
+        self.assertEqual(row.title, "Tomato Pasta")
+        self.assertEqual(row.recipe_id, "recipe-2")
 
     def test_load_or_import_meal_plan_sorts_existing_entries_by_derived_date(self) -> None:
         document = load_or_import_meal_plan(

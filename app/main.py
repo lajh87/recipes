@@ -34,6 +34,7 @@ from app.meal_plan import (
     WEEKDAY_LABELS,
     append_blank_row,
     append_blank_week,
+    add_recipe_to_latest_week,
     populate_week_shopping_lists,
     load_or_import_meal_plan,
     parse_meal_plan_form,
@@ -41,9 +42,17 @@ from app.meal_plan import (
     remove_week,
     save_meal_plan,
 )
-from app.models import CookbookMetadataUpdateRequest, CookbookTocEntry, RecipeRecord, ReviewStatus, ReviewUpdateRequest
+from app.models import (
+    CookbookMetadataUpdateRequest,
+    CookbookTocEntry,
+    RecipeRecord,
+    ReviewStatus,
+    ReviewUpdateRequest,
+    SearchResultRecord,
+)
 from app.nytimes_pdf import extract_nytimes_pdf
 from app.repository import LibraryRepository
+from app.seasonality import current_uk_month, main_seasonal_ingredients, recipe_is_in_season
 from app.waitrose_pdf import extract_waitrose_pdf
 
 logger = logging.getLogger(__name__)
@@ -69,6 +78,37 @@ RECIPE_METADATA_LABELS = {
 }
 RECIPE_METADATA_PRIORITY = ("author", "published_at", "updated_at", "yield", "serves", "makes")
 RECIPE_METADATA_TEXT_BLOCK_KEYS = frozenset({"description", "headnote", "introduction", "subtitle"})
+DIETARY_FILTER_OPTIONS = (
+    {"value": "vegetarian", "label": "Vegetarian"},
+    {"value": "pescatarian", "label": "Pescatarian"},
+)
+DURATION_FILTER_OPTIONS = (
+    {"value": "under-30", "label": "Under 30 min"},
+    {"value": "under-60", "label": "Under 1 hour"},
+    {"value": "under-120", "label": "Under 2 hours"},
+    {"value": "over-120", "label": "2 hours+"},
+)
+SEASON_FILTER_OPTIONS = (
+    {"value": "in-season", "label": "In season now"},
+)
+LAND_MEAT_PATTERN = re.compile(
+    r"\b("
+    r"beef|steak|veal|pork|bacon|ham|prosciutto|pancetta|chorizo|salami|sausage|"
+    r"lamb|mutton|goat|venison|duck|chicken|turkey|goose|pheasant|quail|rabbit|"
+    r"gelatin|lard|suet|pepperoni|mortadella|guanciale|nduja|bone\s+broth|"
+    r"chicken\s+stock|beef\s+stock|pork\s+stock|lamb\s+stock"
+    r")s?\b",
+    re.IGNORECASE,
+)
+SEAFOOD_PATTERN = re.compile(
+    r"\b("
+    r"fish|salmon|tuna|cod|haddock|halibut|trout|anchov(?:y|ies)|sardine|mackerel|"
+    r"seafood|prawn|shrimp|crab|lobster|scallop|clam|mussel|oyster|squid|octopus|"
+    r"fish\s+sauce|worcestershire"
+    r")s?\b",
+    re.IGNORECASE,
+)
+SEAFOOD_FALSE_POSITIVE_PATTERN = re.compile(r"\b(oyster\s+mushroom|fish\s+pepper)\b", re.IGNORECASE)
 
 
 @asynccontextmanager
@@ -405,6 +445,172 @@ def normalize_search_ingredients(values: list[str] | None) -> list[str]:
     return normalized
 
 
+def normalize_dietary_filter(value: str | None) -> str:
+    allowed = {option["value"] for option in DIETARY_FILTER_OPTIONS}
+    cleaned = (value or "").strip().casefold()
+    return cleaned if cleaned in allowed else ""
+
+
+def normalize_duration_filter(value: str | None) -> str:
+    allowed = {option["value"] for option in DURATION_FILTER_OPTIONS}
+    cleaned = (value or "").strip().casefold()
+    return cleaned if cleaned in allowed else ""
+
+
+def normalize_season_filter(value: str | None) -> str:
+    allowed = {option["value"] for option in SEASON_FILTER_OPTIONS}
+    cleaned = (value or "").strip().casefold()
+    return cleaned if cleaned in allowed else ""
+
+
+def _recipe_ingredient_text(recipe: RecipeRecord) -> str:
+    parts: list[str] = []
+    for ingredient in recipe.ingredients:
+        parts.extend(
+            [
+                ingredient.raw,
+                ingredient.normalized_name,
+                ingredient.canonical_name or "",
+                ingredient.item or "",
+            ]
+        )
+    parts.extend(recipe.ingredient_names)
+    return " ".join(part for part in parts if part).casefold()
+
+
+def recipe_dietary_tags(recipe: RecipeRecord) -> list[str]:
+    ingredient_text = SEAFOOD_FALSE_POSITIVE_PATTERN.sub(" ", _recipe_ingredient_text(recipe))
+    has_land_meat = bool(LAND_MEAT_PATTERN.search(ingredient_text))
+    has_seafood = bool(SEAFOOD_PATTERN.search(ingredient_text))
+
+    if has_land_meat:
+        return []
+    if has_seafood:
+        return ["pescatarian"]
+    return ["vegetarian", "pescatarian"]
+
+
+def _duration_text_to_minutes(value: Any) -> int | None:
+    if value is None:
+        return None
+    text = str(value).strip().casefold()
+    if not text:
+        return None
+    iso_match = re.fullmatch(
+        r"p(?:t)?(?:(?P<hours>\d+(?:\.\d+)?)h)?(?:(?P<minutes>\d+(?:\.\d+)?)m)?",
+        text.replace(" ", ""),
+    )
+    if iso_match and (iso_match.group("hours") or iso_match.group("minutes")):
+        hours = float(iso_match.group("hours") or 0)
+        minutes = float(iso_match.group("minutes") or 0)
+        return round(hours * 60 + minutes)
+
+    total = 0.0
+    found = False
+    for match in re.finditer(
+        r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>hours?|hrs?|hr|h|minutes?|mins?|min|m)\b",
+        text,
+    ):
+        found = True
+        amount = float(match.group("value"))
+        unit = match.group("unit")
+        total += amount * 60 if unit.startswith(("h", "hr")) else amount
+    if found:
+        return round(total)
+
+    compact_match = re.fullmatch(r"(?:(?P<hours>\d+)h)?(?:(?P<minutes>\d+)m)?", text)
+    if compact_match and (compact_match.group("hours") or compact_match.group("minutes")):
+        return int(compact_match.group("hours") or 0) * 60 + int(compact_match.group("minutes") or 0)
+
+    numeric_match = re.search(r"\d+", text)
+    return int(numeric_match.group(0)) if numeric_match else None
+
+
+def recipe_duration_minutes(recipe: RecipeRecord) -> int | None:
+    source_metadata = recipe.source.metadata or {}
+    total_minutes = _duration_text_to_minutes(source_metadata.get("total_time"))
+    if total_minutes is not None:
+        return total_minutes
+
+    parts = [
+        _duration_text_to_minutes(source_metadata.get("prep_time")),
+        _duration_text_to_minutes(source_metadata.get("cook_time")),
+    ]
+    known_parts = [part for part in parts if part is not None]
+    if known_parts:
+        return sum(known_parts)
+    return None
+
+
+def recipe_matches_duration_filter(recipe: RecipeRecord, duration_filter: str) -> bool:
+    if not duration_filter:
+        return True
+    minutes = recipe_duration_minutes(recipe)
+    if minutes is None:
+        return False
+    if duration_filter == "under-30":
+        return minutes <= 30
+    if duration_filter == "under-60":
+        return minutes <= 60
+    if duration_filter == "under-120":
+        return minutes <= 120
+    if duration_filter == "over-120":
+        return minutes > 120
+    return True
+
+
+def recipe_matches_dietary_filter(recipe: RecipeRecord, dietary_filter: str) -> bool:
+    if not dietary_filter:
+        return True
+    return dietary_filter in recipe_dietary_tags(recipe)
+
+
+def recipe_matches_season_filter(recipe: RecipeRecord, season_filter: str) -> bool:
+    if not season_filter:
+        return True
+    if season_filter == "in-season":
+        return recipe_is_in_season(recipe)
+    return True
+
+
+def filter_recipe_records(
+    recipes: list[RecipeRecord],
+    *,
+    dietary_filter: str = "",
+    duration_filter: str = "",
+    season_filter: str = "",
+) -> list[RecipeRecord]:
+    return [
+        recipe
+        for recipe in recipes
+        if recipe_matches_dietary_filter(recipe, dietary_filter)
+        and recipe_matches_duration_filter(recipe, duration_filter)
+        and recipe_matches_season_filter(recipe, season_filter)
+    ]
+
+
+def filter_search_results(
+    results: list[Any],
+    *,
+    dietary_filter: str = "",
+    duration_filter: str = "",
+    season_filter: str = "",
+) -> list[Any]:
+    return [
+        result
+        for result in results
+        if recipe_matches_dietary_filter(result.recipe, dietary_filter)
+        and recipe_matches_duration_filter(result.recipe, duration_filter)
+        and recipe_matches_season_filter(result.recipe, season_filter)
+    ]
+
+
+templates.env.globals["recipe_dietary_tags"] = recipe_dietary_tags
+templates.env.globals["recipe_duration_minutes"] = recipe_duration_minutes
+templates.env.globals["recipe_is_in_season"] = recipe_is_in_season
+templates.env.globals["main_seasonal_ingredients"] = main_seasonal_ingredients
+
+
 def build_recipe_embeddings(settings: Settings, drafts: list[RecipeDraft]) -> list[list[float]]:
     if not drafts or not settings.openai_api_key:
         return []
@@ -734,21 +940,44 @@ async def search_page(
     request: Request,
     q: str | None = Query(default=None),
     ingredient: list[str] | None = Query(default=None),
+    diet: str | None = Query(default=None),
+    duration: str | None = Query(default=None),
+    season: str | None = Query(default=None),
     notice: str | None = Query(default=None),
 ) -> HTMLResponse:
     repository = get_repository(request)
     selected_ingredients = normalize_search_ingredients(ingredient)
-    results = (
-        repository.search_recipes(query=q, ingredients=selected_ingredients)
-        if (q or selected_ingredients)
-        else []
+    selected_diet = normalize_dietary_filter(diet)
+    selected_duration = normalize_duration_filter(duration)
+    selected_season = normalize_season_filter(season)
+    if q or selected_ingredients:
+        results = repository.search_recipes(query=q, ingredients=selected_ingredients)
+    elif selected_diet or selected_duration or selected_season:
+        results = [
+            SearchResultRecord(recipe=recipe, score=1.0, keyword_score=0.0, semantic_score=0.0)
+            for recipe in repository.list_recipes()
+        ]
+    else:
+        results = []
+    results = filter_search_results(
+        results,
+        dietary_filter=selected_diet,
+        duration_filter=selected_duration,
+        season_filter=selected_season,
     )
     context = common_template_context(request, notice=notice)
     context.update(
         {
             "ingredients": repository.list_ingredients(ingredients=selected_ingredients),
+            "dietary_filter_options": DIETARY_FILTER_OPTIONS,
+            "duration_filter_options": DURATION_FILTER_OPTIONS,
+            "season_filter_options": SEASON_FILTER_OPTIONS,
             "search_query": q or "",
             "search_ingredients": selected_ingredients,
+            "search_diet": selected_diet,
+            "search_duration": selected_duration,
+            "search_season": selected_season,
+            "current_uk_month": current_uk_month(),
             "search_results": results,
         }
     )
@@ -847,6 +1076,52 @@ async def update_meal_plan_form(
             }
         )
     return redirect_with_notice("/meal-plan", notice_text)
+
+
+@app.post("/recipes/{recipe_id}/meal-plan/latest")
+async def add_recipe_to_latest_meal_plan_week(
+    recipe_id: str,
+    request: Request,
+    return_to: str | None = Form(default=None),
+) -> Response:
+    repository = get_repository(request)
+    recipe = repository.get_recipe(recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found.")
+
+    recipes = repository.list_recipe_references()
+    meal_plan = load_or_import_meal_plan(
+        BASE_DIR.parent,
+        recipes,
+        week_limit=DEFAULT_IMPORT_WEEK_LIMIT,
+        source_path=REDIS_MEAL_PLAN_SOURCE,
+        load_payload=repository.load_meal_plan_payload,
+        save_payload=repository.save_meal_plan_payload,
+    )
+    added_row = add_recipe_to_latest_week(meal_plan, recipe)
+    save_meal_plan(
+        BASE_DIR.parent,
+        meal_plan,
+        save_payload=repository.save_meal_plan_payload,
+    )
+
+    notice = f"Added {recipe.title} to {meal_plan.weeks[0].title}."
+    fallback = str(request.url_for("recipe_page", recipe_id=recipe_id))
+    destination = safe_redirect_target(return_to, fallback)
+    accepts_json = "application/json" in request.headers.get("accept", "").lower()
+    is_ajax = request.headers.get("x-requested-with", "").lower() == "xmlhttprequest"
+    if accepts_json or is_ajax:
+        return JSONResponse(
+            {
+                "ok": True,
+                "recipe_id": recipe.id,
+                "week_id": meal_plan.weeks[0].id,
+                "week_title": meal_plan.weeks[0].title,
+                "row_id": added_row.id,
+                "notice": notice,
+            }
+        )
+    return redirect_with_notice(destination, notice)
 
 
 @app.get("/collections/{collection_slug}", response_class=HTMLResponse)
@@ -1386,13 +1661,31 @@ async def cookbook_recipes(cookbook_id: str, request: Request) -> dict[str, list
 async def list_recipes(
     request: Request,
     ingredient: list[str] | None = Query(default=None),
-) -> dict[str, list[dict]]:
+    diet: str | None = Query(default=None),
+    duration: str | None = Query(default=None),
+    season: str | None = Query(default=None),
+) -> dict[str, Any]:
     repository = get_repository(request)
+    selected_ingredients = normalize_search_ingredients(ingredient)
+    selected_diet = normalize_dietary_filter(diet)
+    selected_duration = normalize_duration_filter(duration)
+    selected_season = normalize_season_filter(season)
     items = [
         item.model_dump()
-        for item in repository.list_recipes(ingredients=normalize_search_ingredients(ingredient))
+        for item in filter_recipe_records(
+            repository.list_recipes(ingredients=selected_ingredients),
+            dietary_filter=selected_diet,
+            duration_filter=selected_duration,
+            season_filter=selected_season,
+        )
     ]
-    return {"items": items}
+    return {
+        "ingredients": selected_ingredients,
+        "diet": selected_diet,
+        "duration": selected_duration,
+        "season": selected_season,
+        "items": items,
+    }
 
 
 @app.get("/api/recipes/{recipe_id}")
@@ -1449,17 +1742,36 @@ async def search_api(
     request: Request,
     q: str | None = Query(default=None),
     ingredient: list[str] | None = Query(default=None),
+    diet: str | None = Query(default=None),
+    duration: str | None = Query(default=None),
+    season: str | None = Query(default=None),
 ) -> dict[str, Any]:
     repository = get_repository(request)
     selected_ingredients = normalize_search_ingredients(ingredient)
-    results = (
-        repository.search_recipes(query=q, ingredients=selected_ingredients)
-        if (q or selected_ingredients)
-        else []
+    selected_diet = normalize_dietary_filter(diet)
+    selected_duration = normalize_duration_filter(duration)
+    selected_season = normalize_season_filter(season)
+    if q or selected_ingredients:
+        results = repository.search_recipes(query=q, ingredients=selected_ingredients)
+    elif selected_diet or selected_duration or selected_season:
+        results = [
+            SearchResultRecord(recipe=recipe, score=1.0, keyword_score=0.0, semantic_score=0.0)
+            for recipe in repository.list_recipes()
+        ]
+    else:
+        results = []
+    results = filter_search_results(
+        results,
+        dietary_filter=selected_diet,
+        duration_filter=selected_duration,
+        season_filter=selected_season,
     )
     return {
         "query": q,
         "ingredients": selected_ingredients,
+        "diet": selected_diet,
+        "duration": selected_duration,
+        "season": selected_season,
         "answer": None,
         "items": [item.model_dump() for item in results],
     }

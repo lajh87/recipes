@@ -57,6 +57,35 @@
         ></div>
       </div>
       <p class="search-selectize__hint">Choose an indexed ingredient to add it to the search filter.</p>
+      <div class="search-filter-grid">
+        <label class="search-filter">
+          <span class="review-note-label">Duration</span>
+          <select name="duration" class="review-select" data-search-filter>
+            <option value="">Any duration</option>
+            {% for option in duration_filter_options %}
+              <option value="{{ option.value }}" {{ 'selected' if search_duration == option.value else '' }}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="search-filter">
+          <span class="review-note-label">Dietary</span>
+          <select name="diet" class="review-select" data-search-filter>
+            <option value="">Any diet</option>
+            {% for option in dietary_filter_options %}
+              <option value="{{ option.value }}" {{ 'selected' if search_diet == option.value else '' }}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="search-filter">
+          <span class="review-note-label">Season</span>
+          <select name="season" class="review-select" data-search-filter>
+            <option value="">Any season</option>
+            {% for option in season_filter_options %}
+              <option value="{{ option.value }}" {{ 'selected' if search_season == option.value else '' }}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
       <div class="card-actions">
         <button class="button" type="submit">Run Search</button>
       </div>
@@ -114,6 +143,19 @@
               {% if result.matched_ingredient %}
                 <div class="pill-row">
                   <span class="pill">{{ result.matched_ingredient }}</span>
+                </div>
+              {% endif %}
+              {% if recipe_is_in_season(result.recipe) %}
+                <div class="pill-row">
+                  <span class="pill">In season</span>
+                </div>
+              {% endif %}
+              {% set dietary_tags = recipe_dietary_tags(result.recipe) %}
+              {% if dietary_tags %}
+                <div class="pill-row">
+                  {% for tag in dietary_tags %}
+                    <span class="pill">{{ tag|title }}</span>
+                  {% endfor %}
                 </div>
               {% endif %}
               {% if result.matched_terms %}

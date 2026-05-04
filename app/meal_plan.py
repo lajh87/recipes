@@ -150,8 +150,10 @@ class ShoppingListRecipeSource:
 @dataclass(slots=True)
 class ShoppingListItem:
     name: str
+    key: str
     recipe_sources: list[ShoppingListRecipeSource] = field(default_factory=list)
     total_uses: int = 0
+    checked: bool = False
 
     @property
     def recipe_summary(self) -> str:
@@ -165,6 +167,7 @@ class MealPlanWeek:
     start_on: str = ""
     notes: str = ""
     legacy_title: str = ""
+    shopping_checked_items: set[str] = field(default_factory=set)
     shopping_list: list[ShoppingListItem] = field(default_factory=list)
 
     @property
@@ -282,6 +285,39 @@ def append_blank_row(week: MealPlanWeek) -> None:
     sort_week_entries(week)
 
 
+def add_recipe_to_latest_week(
+    document: MealPlanDocument,
+    recipe: MealPlanRecipe,
+    *,
+    meal: str = "Dinner",
+    weekday: str = "",
+) -> MealPlanRow:
+    if not document.weeks:
+        document.weeks.append(create_blank_week())
+
+    target_week = document.weeks[0]
+    target_row = next(
+        (
+            entry
+            for entry in target_week.entries
+            if not entry.title and not entry.recipe_id and not entry.weekday and not entry.meal
+        ),
+        None,
+    )
+    if target_row is None:
+        target_row = create_blank_row(weekday=weekday, meal=meal)
+        target_week.entries.append(target_row)
+    else:
+        target_row.weekday = normalize_weekday_label(weekday)
+        target_row.meal = normalize_meal_label(meal)
+
+    target_row.title = recipe.title
+    target_row.recipe_id = recipe.id
+    target_row.recipe = recipe
+    sort_week_entries(target_week)
+    return target_row
+
+
 def remove_week(document: MealPlanDocument, week_id: str) -> None:
     document.weeks = [week for week in document.weeks if week.id != week_id]
     if not document.weeks:
@@ -361,6 +397,7 @@ def meal_plan_to_dict(document: MealPlanDocument) -> dict[str, object]:
                 "start_on": week.start_on,
                 "legacy_title": week.legacy_title,
                 "notes": week.notes,
+                "shopping_checked_items": sorted(week.shopping_checked_items),
                 "entries": [
                     {
                         "id": entry.id,
@@ -429,6 +466,15 @@ def parse_meal_plan_form(
         week.start_on = week_start_on
         week.legacy_title = _display_title(week_title) if week_title and not week_start_on else ""
         week.notes = str(form.get(f"week_notes__{week_id}", "")).strip()
+        week.shopping_checked_items = {
+            str(item).strip()
+            for item in (
+                form.getlist(f"week_shopping_checked__{week_id}")
+                if hasattr(form, "getlist")
+                else []
+            )
+            if str(item).strip()
+        }
         week.entries = []
         row_ids = list(form.getlist(f"week_entry_id__{week_id}")) if hasattr(form, "getlist") else []
         for raw_row_id in row_ids:
@@ -542,7 +588,10 @@ def build_week_shopping_list(
             continue
 
         for ingredient_key, ingredient_label in _shopping_ingredients(recipe):
-            item = aggregated.setdefault(ingredient_key, ShoppingListItem(name=ingredient_key))
+            item = aggregated.setdefault(
+                ingredient_key,
+                ShoppingListItem(name=ingredient_key, key=ingredient_key),
+            )
             item.total_uses += 1
             label_variants[ingredient_key].add(ingredient_label)
             source = source_maps[ingredient_key].get(recipe.id)
@@ -567,6 +616,10 @@ def populate_week_shopping_lists(
 ) -> None:
     for week in document.weeks:
         week.shopping_list = build_week_shopping_list(week, recipes)
+        available_keys = {item.key for item in week.shopping_list}
+        week.shopping_checked_items = week.shopping_checked_items & available_keys
+        for item in week.shopping_list:
+            item.checked = item.key in week.shopping_checked_items
 
 
 def import_recent_weeks_from_text(
@@ -801,6 +854,13 @@ def _week_from_dict(payload: dict[str, object]) -> MealPlanWeek:
     week.start_on = start_on
     week.legacy_title = _display_title(inferred_legacy_title) if inferred_legacy_title and not start_on else ""
     week.notes = str(payload.get("notes", "")).strip()
+    raw_checked_items = payload.get("shopping_checked_items")
+    if isinstance(raw_checked_items, list):
+        week.shopping_checked_items = {
+            str(item).strip()
+            for item in raw_checked_items
+            if str(item).strip()
+        }
     week.entries = []
 
     entries_payload = payload.get("entries")

@@ -1801,6 +1801,7 @@ const selectedContainer = ingredientSelectize?.querySelector("[data-search-selec
 const ingredientInput = ingredientSelectize?.querySelector("[data-ingredient-input]");
 const ingredientOptions = ingredientSelectize?.querySelector("[data-ingredient-options]");
 const searchSubmitButton = searchForm?.querySelector('button[type="submit"]');
+const searchFilterControls = searchForm ? Array.from(searchForm.querySelectorAll("[data-search-filter]")) : [];
 
 let searchResultsPanel = document.querySelector("[data-search-results-panel]");
 let ingredientIndexPanel = document.querySelector("[data-ingredient-index-panel]");
@@ -2048,6 +2049,12 @@ function buildSearchPageUrl() {
   for (const ingredient of selectedIngredients()) {
     params.append("ingredient", ingredient);
   }
+  for (const control of searchFilterControls) {
+    if (!(control instanceof HTMLSelectElement) || !control.name || !control.value) {
+      continue;
+    }
+    params.set(control.name, control.value);
+  }
 
   const actionUrl = new URL(searchForm.action, window.location.origin);
   const queryString = params.toString();
@@ -2276,6 +2283,12 @@ if (searchForm && selectedContainer) {
 
     selectedContainer.addEventListener("click", () => {
       ingredientInput.focus();
+    });
+  }
+
+  for (const control of searchFilterControls) {
+    control.addEventListener("change", () => {
+      void refreshSearchPage();
     });
   }
 }

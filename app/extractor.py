@@ -89,6 +89,7 @@ NON_RECIPE_SECTION_TITLES = {
     "about the authors",
     "about the book",
     "acknowledgements",
+    "acknowledgments",
     "a short note about ingredients",
     "contents",
     "copyright",
@@ -102,6 +103,7 @@ NON_RECIPE_SECTION_TITLES = {
     "recipe list",
     "table of contents",
     "thank you",
+    "turning ideas into recipes",
     "our histories",
     "our shared history",
 }
@@ -235,6 +237,16 @@ EPUB_RECIPE_PARAGRAPH_PROFILES = (
         intro_classes=frozenset({"rec_intro"}),
         metadata_classes=frozenset({"prep_time", "prep_time1", "serves"}),
         signature_classes=frozenset({"ingred", "method", "rec_head"}),
+        min_title_nodes=1,
+    ),
+    EpubRecipeParagraphProfile(
+        title_classes=frozenset({"recipe_header"}),
+        ingredient_classes=frozenset({"calibre7"}),
+        method_classes=frozenset({"calibre8"}),
+        text_classes=frozenset({"calibre7", "calibre8", "calibre9", "calibre10", "recipe_header"}),
+        metadata_classes=frozenset({"calibre10"}),
+        supplemental_heading_classes=frozenset({"calibre9"}),
+        signature_classes=frozenset({"recipe_header", "calibre7", "calibre8"}),
         min_title_nodes=1,
     ),
     EpubRecipeParagraphProfile(

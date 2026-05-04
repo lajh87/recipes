@@ -9,16 +9,19 @@
       <h1>Manage Metadata</h1>
       <p>Edit title, author, cuisine, and published date across the library in one pass.</p>
     </div>
-    <form class="sort-inline" action="{{ url_for('manage_cookbooks_page') }}" method="get">
-      <label class="sort-inline__label" for="manage-cookbook-sort">Sort By</label>
-      <select id="manage-cookbook-sort" name="sort" class="review-select sort-inline__select" onchange="this.form.submit()">
-        {% for option in cookbook_sort_options %}
-          <option value="{{ option.value }}" {{ 'selected' if cookbook_sort == option.value else '' }}>
-            {{ option.label }}
-          </option>
-        {% endfor %}
-      </select>
-    </form>
+    <div class="library-actions">
+      <form class="sort-inline" action="{{ url_for('manage_cookbooks_page') }}" method="get">
+        <label class="sort-inline__label" for="manage-cookbook-sort">Sort By</label>
+        <select id="manage-cookbook-sort" name="sort" class="review-select sort-inline__select" onchange="this.form.submit()">
+          {% for option in cookbook_sort_options %}
+            <option value="{{ option.value }}" {{ 'selected' if cookbook_sort == option.value else '' }}>
+              {{ option.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </form>
+      <a class="button button--secondary" href="{{ url_for('manage_recipe_tags_page') }}">Manage Tags</a>
+    </div>
   </section>
 
   <section class="panel">

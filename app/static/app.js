@@ -2321,7 +2321,286 @@ document.addEventListener("click", (event) => {
   }
 });
 
+function initRecipeTagEditor() {
+  if (!(document.querySelector("[data-recipe-tag-row]") instanceof HTMLElement)) {
+    return;
+  }
+
+  function rowControls(row) {
+    return {
+      dietaryAuto: row.querySelector("[data-dietary-auto]"),
+      seasonAuto: row.querySelector("[data-season-auto]"),
+      dietaryTags: Array.from(row.querySelectorAll('input[name="dietary_tag"]')),
+      seasonalMonths: Array.from(row.querySelectorAll('input[name="seasonal_month"]')),
+      ingredientClassifications: Array.from(row.querySelectorAll("[data-ingredient-classification-key]")),
+      seasonalIngredients: row.querySelector('input[name="seasonal_ingredients"]'),
+      note: row.querySelector('input[name="note"]'),
+      source: row.querySelector("[data-tag-source]"),
+      seasonSummary: row.querySelector("[data-season-summary]"),
+    };
+  }
+
+  function setStatus(row, message, state = "") {
+    const status = row.querySelector("[data-tag-save-status]");
+    if (!(status instanceof HTMLElement)) {
+      return;
+    }
+    status.textContent = message;
+    status.dataset.state = state;
+  }
+
+  function syncAutoDisabled(row) {
+    const controls = rowControls(row);
+    const dietaryIsAuto = controls.dietaryAuto instanceof HTMLInputElement && controls.dietaryAuto.checked;
+    const seasonIsAuto = controls.seasonAuto instanceof HTMLInputElement && controls.seasonAuto.checked;
+
+    for (const input of controls.dietaryTags) {
+      if (input instanceof HTMLInputElement) {
+        input.disabled = dietaryIsAuto;
+      }
+    }
+    for (const input of controls.seasonalMonths) {
+      if (input instanceof HTMLInputElement) {
+        input.disabled = seasonIsAuto;
+      }
+    }
+    if (controls.seasonalIngredients instanceof HTMLInputElement) {
+      controls.seasonalIngredients.disabled = seasonIsAuto;
+    }
+  }
+
+  function payloadForRow(row) {
+    const controls = rowControls(row);
+    const dietaryIsAuto = controls.dietaryAuto instanceof HTMLInputElement && controls.dietaryAuto.checked;
+    const seasonIsAuto = controls.seasonAuto instanceof HTMLInputElement && controls.seasonAuto.checked;
+    const dietaryTags = controls.dietaryTags
+      .filter((input) => input instanceof HTMLInputElement && input.checked)
+      .map((input) => input.value);
+    const seasonalMonths = controls.seasonalMonths
+      .filter((input) => input instanceof HTMLInputElement && input.checked)
+      .map((input) => Number.parseInt(input.value, 10))
+      .filter((value) => Number.isFinite(value));
+    const seasonalIngredients = controls.seasonalIngredients instanceof HTMLInputElement
+      ? controls.seasonalIngredients.value.split(",").map((value) => value.trim()).filter(Boolean)
+      : [];
+    const ingredientClassifications = {};
+    for (const input of controls.ingredientClassifications) {
+      if (!(input instanceof HTMLSelectElement)) {
+        continue;
+      }
+      const key = input.dataset.ingredientClassificationKey || "";
+      if (key && input.value !== "auto") {
+        ingredientClassifications[key] = input.value;
+      }
+    }
+
+    return {
+      dietary_tags: dietaryIsAuto ? null : dietaryTags,
+      seasonal_months: seasonIsAuto ? null : seasonalMonths,
+      seasonal_ingredients: seasonIsAuto ? null : seasonalIngredients,
+      ingredient_classifications: ingredientClassifications,
+      note: controls.note instanceof HTMLInputElement ? controls.note.value.trim() : "",
+    };
+  }
+
+  function summaryRowForEditor(row) {
+    const previous = row.previousElementSibling;
+    return previous instanceof HTMLElement && previous.matches("[data-recipe-tag-summary]") ? previous : null;
+  }
+
+  function setSummaryDiet(summaryRow, dietaryTags) {
+    const container = summaryRow.querySelector("[data-diet-summary]");
+    if (!(container instanceof HTMLElement)) {
+      return;
+    }
+    container.replaceChildren();
+    if (dietaryTags.includes("vegetarian")) {
+      const pill = document.createElement("span");
+      pill.className = "pill";
+      pill.textContent = "Vegetarian";
+      container.appendChild(pill);
+    }
+    if (dietaryTags.includes("pescatarian")) {
+      const pill = document.createElement("span");
+      pill.className = "pill";
+      pill.textContent = "Pescatarian";
+      container.appendChild(pill);
+    }
+    if (container.children.length === 0) {
+      const emptyValue = document.createElement("span");
+      emptyValue.className = "recipe-tag-table__empty-value";
+      emptyValue.textContent = "None";
+      container.appendChild(emptyValue);
+    }
+  }
+
+  function updateSummaryRow(row, payload) {
+    const summaryRow = summaryRowForEditor(row);
+    if (!(summaryRow instanceof HTMLElement)) {
+      return;
+    }
+
+    setSummaryDiet(summaryRow, Array.isArray(payload.dietary_tags) ? payload.dietary_tags : []);
+
+    const monthSummary = summaryRow.querySelector("[data-month-summary]");
+    if (monthSummary instanceof HTMLElement) {
+      monthSummary.textContent = payload.seasonal_month_labels || "None";
+    }
+
+    const inSeasonSummary = summaryRow.querySelector("[data-in-season-summary]");
+    if (inSeasonSummary instanceof HTMLElement) {
+      inSeasonSummary.replaceChildren();
+      if (payload.in_season_now) {
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.textContent = "In season";
+        inSeasonSummary.appendChild(pill);
+      }
+    }
+
+    const produceSummary = summaryRow.querySelector("[data-produce-summary]");
+    const produce = Array.isArray(payload.seasonal_ingredients) ? payload.seasonal_ingredients.join(", ") : "";
+    if (produceSummary instanceof HTMLElement) {
+      produceSummary.textContent = produce || "No seasonal produce";
+    }
+
+    const seasonSummary = summaryRow.querySelector("[data-season-summary]");
+    if (seasonSummary instanceof HTMLElement) {
+      seasonSummary.textContent = produce ? `Main produce: ${produce}.` : "No main seasonal produce detected.";
+    }
+
+    const ingredientSummary = summaryRow.querySelector("[data-ingredient-classification-summary]");
+    if (ingredientSummary instanceof HTMLElement && payload.ingredient_classification_summary) {
+      ingredientSummary.textContent = payload.ingredient_classification_summary;
+    }
+
+    const source = summaryRow.querySelector("[data-tag-source]");
+    if (source instanceof HTMLElement) {
+      source.textContent = payload.tag_source || "auto";
+    }
+  }
+
+  document.addEventListener("change", (event) => {
+    const row = event.target.closest("[data-recipe-tag-row]");
+    if (row instanceof HTMLElement) {
+      syncAutoDisabled(row);
+      setStatus(row, "Unsaved", "pending");
+    }
+  });
+
+  document.addEventListener("input", (event) => {
+    const row = event.target.closest("[data-recipe-tag-row]");
+    if (row instanceof HTMLElement) {
+      setStatus(row, "Unsaved", "pending");
+    }
+  });
+
+  document.addEventListener("click", async (event) => {
+    const summaryRow = event.target.closest("[data-recipe-tag-summary]");
+    if (summaryRow instanceof HTMLElement) {
+      if (event.target.closest("a")) {
+        return;
+      }
+      const editorRow = summaryRow.nextElementSibling;
+      if (editorRow instanceof HTMLElement && editorRow.matches("[data-recipe-tag-row]")) {
+        const isOpen = !editorRow.hidden;
+        editorRow.hidden = isOpen;
+        summaryRow.classList.toggle("is-editing", !isOpen);
+        summaryRow.setAttribute("aria-expanded", String(!isOpen));
+        if (!isOpen) {
+          syncAutoDisabled(editorRow);
+        }
+      }
+      return;
+    }
+
+    const autoButton = event.target.closest("[data-use-automatic]");
+    if (autoButton instanceof HTMLButtonElement) {
+      const row = autoButton.closest("[data-recipe-tag-row]");
+      if (!(row instanceof HTMLElement)) {
+        return;
+      }
+      const controls = rowControls(row);
+      if (controls.dietaryAuto instanceof HTMLInputElement) {
+        controls.dietaryAuto.checked = true;
+      }
+      if (controls.seasonAuto instanceof HTMLInputElement) {
+        controls.seasonAuto.checked = true;
+      }
+      for (const input of controls.ingredientClassifications) {
+        if (input instanceof HTMLSelectElement) {
+          input.value = "auto";
+        }
+      }
+      syncAutoDisabled(row);
+      setStatus(row, "Unsaved", "pending");
+      return;
+    }
+
+    const saveButton = event.target.closest("[data-save-recipe-tags]");
+    if (!(saveButton instanceof HTMLButtonElement)) {
+      return;
+    }
+    const row = saveButton.closest("[data-recipe-tag-row]");
+    if (!(row instanceof HTMLElement)) {
+      return;
+    }
+
+    saveButton.disabled = true;
+    saveButton.setAttribute("aria-busy", "true");
+    setStatus(row, "Saving", "pending");
+    try {
+      const response = await fetch(saveButton.dataset.tagsUrl || "", {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payloadForRow(row)),
+      });
+      if (!response.ok) {
+        throw new Error(`Recipe tag update failed with status ${response.status}`);
+      }
+      const payload = await response.json();
+      const controls = rowControls(row);
+      if (controls.source instanceof HTMLElement) {
+        controls.source.textContent = payload.tag_source || "auto";
+      }
+      updateSummaryRow(row, payload);
+      if (controls.seasonSummary instanceof HTMLElement) {
+        const pieces = [];
+        if (payload.seasonal_month_labels) {
+          pieces.push(`${payload.seasonal_month_labels}.`);
+        }
+        if (Array.isArray(payload.seasonal_ingredients) && payload.seasonal_ingredients.length > 0) {
+          pieces.push(`Main produce: ${payload.seasonal_ingredients.join(", ")}.`);
+        } else {
+          pieces.push("No main seasonal produce detected.");
+        }
+        if (payload.in_season_now) {
+          pieces.push("In season now.");
+        }
+        controls.seasonSummary.textContent = pieces.join(" ");
+      }
+      setStatus(row, "Saved", "saved");
+    } catch (error) {
+      console.error(error);
+      setStatus(row, "Could not save", "error");
+    } finally {
+      saveButton.disabled = false;
+      saveButton.removeAttribute("aria-busy");
+    }
+  });
+
+  for (const row of document.querySelectorAll("[data-recipe-tag-row]")) {
+    if (row instanceof HTMLElement) {
+      syncAutoDisabled(row);
+    }
+  }
+}
+
 initRecipeToggles();
 initCookbookToc();
 initMealPlanAutoLink();
 initIngredientNetworkD3();
+initRecipeTagEditor();

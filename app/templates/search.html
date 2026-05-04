@@ -145,12 +145,12 @@
                   <span class="pill">{{ result.matched_ingredient }}</span>
                 </div>
               {% endif %}
-              {% if recipe_is_in_season(result.recipe) %}
+              {% if effective_recipe_is_in_season(result.recipe) %}
                 <div class="pill-row">
                   <span class="pill">In season</span>
                 </div>
               {% endif %}
-              {% set dietary_tags = recipe_dietary_tags(result.recipe) %}
+              {% set dietary_tags = effective_recipe_dietary_tags(result.recipe) %}
               {% if dietary_tags %}
                 <div class="pill-row">
                   {% for tag in dietary_tags %}

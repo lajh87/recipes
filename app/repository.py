@@ -829,6 +829,52 @@ class LibraryRepository:
         self._refresh_cookbook_review_count(recipe.cookbook_id)
         return recipe
 
+    def update_recipe_tags(
+        self,
+        recipe_id: str,
+        *,
+        dietary_tags: list[str] | None = None,
+        seasonal_months: list[int] | None = None,
+        seasonal_ingredients: list[str] | None = None,
+        ingredient_classifications: dict[str, str] | None = None,
+        note: str | None = None,
+    ) -> RecipeRecord | None:
+        recipe = self.get_recipe(recipe_id)
+        if not recipe:
+            return None
+
+        metadata = dict(recipe.source.metadata or {})
+        if dietary_tags is None:
+            metadata.pop("dietary_tags_override", None)
+        else:
+            metadata["dietary_tags_override"] = dietary_tags
+
+        if seasonal_months is None:
+            metadata.pop("seasonal_months_override", None)
+        else:
+            metadata["seasonal_months_override"] = seasonal_months
+
+        if seasonal_ingredients is None:
+            metadata.pop("seasonal_ingredients_override", None)
+        else:
+            metadata["seasonal_ingredients_override"] = seasonal_ingredients
+
+        if ingredient_classifications is None or not ingredient_classifications:
+            metadata.pop("ingredient_classification_overrides", None)
+        else:
+            metadata["ingredient_classification_overrides"] = ingredient_classifications
+
+        if note:
+            metadata["tag_review_note"] = note
+            metadata["tag_reviewed_at"] = datetime.now(UTC).isoformat()
+        else:
+            metadata.pop("tag_review_note", None)
+            metadata.pop("tag_reviewed_at", None)
+
+        recipe.source.metadata = metadata
+        self.redis.set(self.settings.recipe_key(recipe_id), recipe.model_dump_json())
+        return recipe
+
     def list_ingredients(
         self,
         query: str | None = None,

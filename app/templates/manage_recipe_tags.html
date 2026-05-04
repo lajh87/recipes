@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Recipe Tags · {{ app_name }}{% endblock %}
+
+{% block content %}
+  <section class="page-hero page-hero--compact">
+    <div class="page-hero__content">
+      <p class="page-kicker">Library</p>
+      <h1>Recipe Tags</h1>
+      <p>
+        Showing {{ recipe_tag_page_start }}-{{ recipe_tag_page_end }} of {{ recipe_tag_total_rows }} recipes.
+        Current UK month: {{ current_uk_month }}.
+      </p>
+    </div>
+    <form class="tag-filter-form" action="{{ url_for('manage_recipe_tags_page') }}" method="get">
+      <input type="hidden" name="page" value="1" />
+      <label class="search-filter">
+        <span class="review-note-label">View</span>
+        <select name="filter" class="review-select" onchange="this.form.submit()">
+          {% for option in recipe_tag_filter_options %}
+            <option value="{{ option.value }}" {{ 'selected' if recipe_tag_filter == option.value else '' }}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="search-filter">
+        <span class="review-note-label">Collection</span>
+        <select name="collection" class="review-select" onchange="this.form.submit()">
+          {% for option in recipe_tag_collection_options %}
+            <option value="{{ option.value }}" {{ 'selected' if recipe_tag_collection == option.value else '' }}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="search-filter">
+        <span class="review-note-label">Book</span>
+        <select name="cookbook" class="review-select" onchange="this.form.submit()">
+          <option value="all" {{ 'selected' if recipe_tag_cookbook == 'all' else '' }}>All books</option>
+          {% for cookbook in recipe_tag_cookbook_options %}
+            <option value="{{ cookbook.id }}" {{ 'selected' if recipe_tag_cookbook == cookbook.id else '' }}>{{ cookbook.title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="search-filter">
+        <span class="review-note-label">Diet</span>
+        <select name="diet" class="review-select" onchange="this.form.submit()">
+          {% for option in recipe_tag_diet_options %}
+            <option value="{{ option.value }}" {{ 'selected' if recipe_tag_diet == option.value else '' }}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="search-filter">
+        <span class="review-note-label">Season</span>
+        <select name="season" class="review-select" onchange="this.form.submit()">
+          {% for option in recipe_tag_season_options %}
+            <option value="{{ option.value }}" {{ 'selected' if recipe_tag_season == option.value else '' }}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="search-filter">
+        <span class="review-note-label">Rows</span>
+        <select name="page_size" class="review-select" onchange="this.form.submit()">
+          {% for option in recipe_tag_page_size_options %}
+            <option value="{{ option }}" {{ 'selected' if recipe_tag_page_size == option else '' }}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="recipe-tag-pagination recipe-tag-pagination--top">
+      <p>Page {{ recipe_tag_page }} of {{ recipe_tag_page_count }}</p>
+      <nav aria-label="Recipe tag pages">
+        {% if recipe_tag_previous_page_url %}
+          <a class="button button--secondary button--compact" href="{{ recipe_tag_previous_page_url }}">Previous</a>
+        {% endif %}
+        {% for item in recipe_tag_page_links %}
+          <a class="button button--secondary button--compact{% if item.number == recipe_tag_page %} is-active{% endif %}" href="{{ item.url }}" {% if item.number == recipe_tag_page %}aria-current="page"{% endif %}>{{ item.number }}</a>
+        {% endfor %}
+        {% if recipe_tag_next_page_url %}
+          <a class="button button--secondary button--compact" href="{{ recipe_tag_next_page_url }}">Next</a>
+        {% endif %}
+      </nav>
+    </div>
+    <div class="recipe-tag-table-wrap">
+      <table class="recipe-tag-table">
+        <thead>
+          <tr>
+            <th scope="col">Recipe</th>
+            <th scope="col">Diet</th>
+            <th scope="col">Months</th>
+            <th scope="col">Produce / Evidence</th>
+            <th scope="col">Mode</th>
+            <th scope="col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in recipe_tag_rows %}
+            <tr class="recipe-tag-table__summary-row" data-recipe-tag-summary data-recipe-id="{{ row.recipe.id }}" aria-expanded="false">
+              <td>
+                <a class="text-link recipe-tag-table__title" href="{{ url_for('recipe_page', recipe_id=row.recipe.id) }}">{{ row.recipe.title }}</a>
+                <span class="recipe-tag-table__meta">{{ row.recipe.cookbook_title }}</span>
+                {% if row.needs_review %}
+                  <span class="pill">Needs review</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="pill-row recipe-tag-table__summary-pills" data-diet-summary>
+                  {% if row.is_vegetarian %}<span class="pill">Vegetarian</span>{% endif %}
+                  {% if row.is_pescatarian %}<span class="pill">Pescatarian</span>{% endif %}
+                  {% if not row.dietary_tags %}<span class="recipe-tag-table__empty-value">None</span>{% endif %}
+                </div>
+              </td>
+              <td>
+                <span data-month-summary>{{ row.seasonal_month_labels or 'None' }}</span>
+                <span data-in-season-summary>{% if row.in_season_now %}<span class="pill">In season</span>{% endif %}</span>
+              </td>
+              <td>
+                <span data-produce-summary>{{ row.seasonal_ingredients_text or 'No seasonal produce' }}</span>
+                <p class="recipe-tag-table__explanation">{{ row.dietary_explanation }}</p>
+                <p class="recipe-tag-table__explanation" data-ingredient-classification-summary>{{ row.ingredient_classification_summary }}</p>
+                <p class="recipe-tag-table__explanation" data-season-summary>
+                  {{ row.seasonality_explanation }}
+                </p>
+              </td>
+              <td class="recipe-tag-table__mode-cell">
+                <span class="pill" data-tag-source>{{ row.tag_source }}</span>
+              </td>
+              <td>
+                <button class="button button--secondary button--compact" type="button" data-edit-recipe-tags>Edit</button>
+              </td>
+            </tr>
+            <tr class="recipe-tag-table__edit-row" data-recipe-tag-row data-recipe-id="{{ row.recipe.id }}" hidden>
+              <td colspan="6">
+                <div class="recipe-tag-editor">
+                  <fieldset class="tag-fieldset tag-fieldset--diet">
+                    <legend>Dietary tags</legend>
+                    <label class="tag-check">
+                      <input type="checkbox" name="dietary_auto" value="1" data-dietary-auto {{ 'checked' if row.dietary_is_auto else '' }} />
+                      <span>Auto diet</span>
+                    </label>
+                    <label class="tag-check" title="Vegetarian">
+                      <input type="checkbox" name="dietary_tag" value="vegetarian" {{ 'checked' if row.is_vegetarian else '' }} />
+                      <span>Vegetarian</span>
+                    </label>
+                    <label class="tag-check" title="Pescatarian">
+                      <input type="checkbox" name="dietary_tag" value="pescatarian" {{ 'checked' if row.is_pescatarian else '' }} />
+                      <span>Pescatarian</span>
+                    </label>
+                  </fieldset>
+
+                  <fieldset class="tag-fieldset tag-fieldset--months">
+                    <legend>Seasonal months</legend>
+                    <label class="tag-check">
+                      <input type="checkbox" name="season_auto" value="1" data-season-auto {{ 'checked' if row.seasonal_is_auto else '' }} />
+                      <span>Auto season</span>
+                    </label>
+                    <div class="month-checks">
+                      {% for month in month_options %}
+                        <label class="month-check" title="{{ month.label }}">
+                          <input type="checkbox" name="seasonal_month" value="{{ month.value }}" {{ 'checked' if month.value in row.seasonal_months else '' }} />
+                          <span>{{ month.label }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  </fieldset>
+
+                  <input class="recipe-tag-table__produce-input" type="text" name="seasonal_ingredients" value="{{ row.seasonal_ingredients_text }}" placeholder="asparagus, tomato" />
+                  <input type="hidden" name="note" value="{{ row.note }}" />
+                  <span class="pill" data-tag-source>{{ row.tag_source }}</span>
+
+                  <div class="ingredient-classifier">
+                    {% for ingredient in row.ingredient_classification_rows %}
+                      <label class="ingredient-classifier__row">
+                        <span title="{{ ingredient.label }}">{{ ingredient.label }}</span>
+                        <select name="ingredient_classification" data-ingredient-classification-key="{{ ingredient.key }}">
+                          <option value="auto" {{ 'selected' if not ingredient.is_override else '' }}>Auto: {{ ingredient.auto_classification }}</option>
+                          <option value="none" {{ 'selected' if ingredient.is_override and ingredient.classification == 'none' else '' }}>None</option>
+                          <option value="meat" {{ 'selected' if ingredient.is_override and ingredient.classification == 'meat' else '' }}>Meat</option>
+                          <option value="fish" {{ 'selected' if ingredient.is_override and ingredient.classification == 'fish' else '' }}>Fish</option>
+                        </select>
+                      </label>
+                    {% endfor %}
+                  </div>
+
+                  <div class="tag-save-actions">
+                    <button class="button button--secondary button--compact" type="button" data-use-automatic>Auto</button>
+                    <button class="button button--compact" type="button" data-save-recipe-tags data-tags-url="{{ url_for('update_recipe_tags', recipe_id=row.recipe.id) }}">Save</button>
+                    <span class="tag-save-status" data-tag-save-status></span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="6">
+                <article class="empty-state">
+                  <h3>No recipes found</h3>
+                  <p>Change the table filter or add recipes to the library.</p>
+                </article>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="recipe-tag-pagination">
+      <p>Showing {{ recipe_tag_page_start }}-{{ recipe_tag_page_end }} of {{ recipe_tag_total_rows }}</p>
+      <nav aria-label="Recipe tag pages">
+        {% if recipe_tag_previous_page_url %}
+          <a class="button button--secondary button--compact" href="{{ recipe_tag_previous_page_url }}">Previous</a>
+        {% endif %}
+        {% for item in recipe_tag_page_links %}
+          <a class="button button--secondary button--compact{% if item.number == recipe_tag_page %} is-active{% endif %}" href="{{ item.url }}" {% if item.number == recipe_tag_page %}aria-current="page"{% endif %}>{{ item.number }}</a>
+        {% endfor %}
+        {% if recipe_tag_next_page_url %}
+          <a class="button button--secondary button--compact" href="{{ recipe_tag_next_page_url }}">Next</a>
+        {% endif %}
+      </nav>
+    </div>
+  </section>
+{% endblock %}

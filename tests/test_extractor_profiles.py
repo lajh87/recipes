@@ -355,6 +355,52 @@ class ExtractorProfileTests(unittest.TestCase):
         self.assertEqual(sections[1].images, [])
         self.assertEqual(sections[1].metadata["chilling_time"], "1 hour")
 
+    def test_plenty_more_profile_keeps_serving_notes_and_components_inside_recipe(self) -> None:
+        soup = BeautifulSoup(
+            """
+            <html><body>
+              <h2 class="recipe_header list6">WATERCRESS SALAD WITH QUAIL'S EGGS, RICOTTA AND SEEDS</h2>
+              <h3 class="calibre10">as a starter</h3>
+              <ul>
+                <li class="calibre7">12 quail's eggs</li>
+                <li class="calibre7">2 small garlic cloves, crushed</li>
+              </ul>
+              <h4 class="calibre9">Seeds</h4>
+              <ul>
+                <li class="calibre7">1 1/2 tbsp flaked almonds</li>
+                <li class="calibre7">2 tsp sesame seeds</li>
+              </ul>
+              <p class="calibre8">Start with the seeds.</p>
+              <p class="calibre8">Place the quail's eggs in a saucepan.</p>
+              <h2 class="recipe_header list7">RAW VEGETABLE SALAD</h2>
+              <h3 class="calibre10">as a side dish</h3>
+              <ul>
+                <li class="calibre7">200g cauliflower</li>
+                <li class="calibre7">200g radishes</li>
+              </ul>
+              <p class="calibre8">Mix everything together.</p>
+            </body></html>
+            """,
+            "html.parser",
+        )
+
+        profile = self.extractor._match_epub_recipe_paragraph_profile(soup)
+        self.assertIsNotNone(profile)
+        sections = self.extractor._extract_epub_recipe_paragraph_sections(
+            book=None,
+            href_to_item={},
+            document_item=FakeDocumentItem("text/part0005_split_012.html"),
+            soup=soup,
+            profile=profile,
+        )
+
+        self.assertEqual(len(sections), 2)
+        self.assertEqual(sections[0].chapter_title, "WATERCRESS SALAD WITH QUAIL'S EGGS, RICOTTA AND SEEDS")
+        self.assertIn("as a starter", sections[0].text)
+        self.assertIn("Seeds", sections[0].text)
+        self.assertIn("1 1/2 tbsp flaked almonds", sections[0].ingredient_lines)
+        self.assertEqual(sections[1].chapter_title, "RAW VEGETABLE SALAD")
+
     def test_recipe_candidate_rejects_non_recipe_frontmatter(self) -> None:
         section = CandidateSection(
             source_format="epub",
@@ -366,6 +412,20 @@ class ExtractorProfileTests(unittest.TestCase):
         )
 
         self.assertFalse(self.extractor._is_recipe_candidate(section))
+
+    def test_recipe_candidate_rejects_plenty_more_non_recipe_titles(self) -> None:
+        for title in ("TURNING IDEAS INTO RECIPES", "ACKNOWLEDGMENTS"):
+            with self.subTest(title=title):
+                section = CandidateSection(
+                    source_format="epub",
+                    section_key="text/part0004_split_002.html#1",
+                    chapter_title=title,
+                    anchor="text/part0004_split_002.html#1",
+                    text=f"{title}\nThis section mentions ingredients and cooking inspiration.",
+                    excerpt=title,
+                )
+
+                self.assertFalse(self.extractor._is_recipe_candidate(section))
 
     def test_recipe_candidate_rejects_ottolenghi_frontmatter_by_path(self) -> None:
         section = CandidateSection(

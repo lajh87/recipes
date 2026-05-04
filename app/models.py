@@ -135,6 +135,14 @@ class ReviewUpdateRequest(BaseModel):
     note: str | None = None
 
 
+class RecipeTagsUpdateRequest(BaseModel):
+    dietary_tags: list[str] | None = None
+    seasonal_months: list[int] | None = None
+    seasonal_ingredients: list[str] | None = None
+    ingredient_classifications: dict[str, str] | None = None
+    note: str | None = None
+
+
 class SearchResultRecord(BaseModel):
     recipe: RecipeRecord
     score: float

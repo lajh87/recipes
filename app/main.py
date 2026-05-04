@@ -10,7 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 from bs4 import BeautifulSoup
 from ebooklib import ITEM_DOCUMENT, epub
@@ -25,7 +25,7 @@ from app.config import Settings, get_settings
 from app.epub import build_epub_chapter_map, normalize_epub_path
 from app.extractor import OpenAIRecipeExtractor, RecipeDraft
 from app.jamie_oliver_pdf import extract_jamie_oliver_pdf
-from app.ingredients import canonicalize_ingredient_name
+from app.ingredients import canonicalize_ingredient_name, ingredient_index_name
 from app.meal_plan import (
     MealPlanDocument,
     DEFAULT_IMPORT_WEEK_LIMIT,
@@ -46,13 +46,19 @@ from app.models import (
     CookbookMetadataUpdateRequest,
     CookbookTocEntry,
     RecipeRecord,
+    RecipeTagsUpdateRequest,
     ReviewStatus,
     ReviewUpdateRequest,
     SearchResultRecord,
 )
 from app.nytimes_pdf import extract_nytimes_pdf
 from app.repository import LibraryRepository
-from app.seasonality import current_uk_month, main_seasonal_ingredients, recipe_is_in_season
+from app.seasonality import (
+    UK_SEASONAL_PRODUCE,
+    current_uk_month,
+    main_seasonal_ingredients,
+    recipe_is_in_season,
+)
 from app.waitrose_pdf import extract_waitrose_pdf
 
 logger = logging.getLogger(__name__)
@@ -91,6 +97,34 @@ DURATION_FILTER_OPTIONS = (
 SEASON_FILTER_OPTIONS = (
     {"value": "in-season", "label": "In season now"},
 )
+MONTH_OPTIONS = (
+    {"value": 1, "label": "Jan"},
+    {"value": 2, "label": "Feb"},
+    {"value": 3, "label": "Mar"},
+    {"value": 4, "label": "Apr"},
+    {"value": 5, "label": "May"},
+    {"value": 6, "label": "Jun"},
+    {"value": 7, "label": "Jul"},
+    {"value": 8, "label": "Aug"},
+    {"value": 9, "label": "Sep"},
+    {"value": 10, "label": "Oct"},
+    {"value": 11, "label": "Nov"},
+    {"value": 12, "label": "Dec"},
+)
+MONTH_LABELS = {option["value"]: option["label"] for option in MONTH_OPTIONS}
+TAG_REVIEW_FILTER_OPTIONS = (
+    {"value": "all", "label": "All recipes"},
+    {"value": "manual", "label": "Manual overrides"},
+    {"value": "needs-review", "label": "Needs review"},
+)
+DIETARY_TAG_VALUES = ("vegetarian", "pescatarian")
+INGREDIENT_CLASSIFICATION_VALUES = ("none", "meat", "fish")
+TAG_SEASON_FILTER_OPTIONS = (
+    {"value": "all", "label": "Any season"},
+    {"value": "in-season", "label": "In season now"},
+    {"value": "no-seasonal-produce", "label": "No seasonal produce"},
+    *({"value": f"month-{option['value']}", "label": option["label"]} for option in MONTH_OPTIONS),
+)
 LAND_MEAT_PATTERN = re.compile(
     r"\b("
     r"beef|steak|veal|pork|bacon|ham|prosciutto|pancetta|chorizo|salami|sausage|"
@@ -108,7 +142,7 @@ SEAFOOD_PATTERN = re.compile(
     r")s?\b",
     re.IGNORECASE,
 )
-SEAFOOD_FALSE_POSITIVE_PATTERN = re.compile(r"\b(oyster\s+mushroom|fish\s+pepper)\b", re.IGNORECASE)
+SEAFOOD_FALSE_POSITIVE_PATTERN = re.compile(r"\b(oyster\s+mushrooms?|fish\s+pepper)\b", re.IGNORECASE)
 
 
 @asynccontextmanager
@@ -198,6 +232,371 @@ def cookbook_management_groups(cookbooks: list[Any]) -> list[dict[str, Any]]:
         group_map[slug]["items"].append(cookbook)
 
     return [group for group in groups if group["items"]]
+
+
+def normalize_tag_review_filter(value: str | None) -> str:
+    allowed = {option["value"] for option in TAG_REVIEW_FILTER_OPTIONS}
+    cleaned = (value or "all").strip().casefold()
+    return cleaned if cleaned in allowed else "all"
+
+
+def normalize_tag_diet_filter(value: str | None) -> str:
+    cleaned = (value or "all").strip().casefold()
+    if cleaned == "all":
+        return "all"
+    return cleaned if cleaned in DIETARY_TAG_VALUES else "all"
+
+
+def normalize_tag_season_filter(value: str | None) -> str:
+    allowed = {option["value"] for option in TAG_SEASON_FILTER_OPTIONS}
+    cleaned = (value or "all").strip().casefold()
+    return cleaned if cleaned in allowed else "all"
+
+
+def normalize_tag_collection_filter(value: str | None, cookbooks: list[Any], collections: list[Any]) -> str:
+    cleaned = (value or "all").strip()
+    allowed = {"all", "books"} | {collection.slug for collection in collections} | {
+        cookbook.collection_slug for cookbook in cookbooks if cookbook.collection_slug
+    }
+    return cleaned if cleaned in allowed else "all"
+
+
+def normalize_tag_cookbook_filter(value: str | None, cookbooks: list[Any]) -> str:
+    cleaned = (value or "all").strip()
+    allowed = {"all"} | {cookbook.id for cookbook in cookbooks}
+    return cleaned if cleaned in allowed else "all"
+
+
+def recipe_tag_collection_options(collections: list[Any]) -> list[dict[str, str]]:
+    return [
+        {"value": "all", "label": "All collections"},
+        {"value": "books", "label": "Books"},
+        *[
+            {"value": collection.slug, "label": collection.title}
+            for collection in collections
+            if collection.slug not in {"favourites", "want-to-try"}
+        ],
+    ]
+
+
+def recipe_tag_cookbook_options(cookbooks: list[Any], *, collection_filter: str = "all") -> list[Any]:
+    filtered = cookbooks
+    if collection_filter == "books":
+        filtered = [cookbook for cookbook in cookbooks if not cookbook.collection_slug]
+    elif collection_filter != "all":
+        filtered = [cookbook for cookbook in cookbooks if cookbook.collection_slug == collection_filter]
+    return sorted(filtered, key=lambda cookbook: cookbook.title.casefold())
+
+
+def filter_recipes_for_tag_management(
+    recipes: list[RecipeRecord],
+    *,
+    cookbook_filter: str = "all",
+    collection_filter: str = "all",
+    cookbook_collection_map: dict[str, str],
+) -> list[RecipeRecord]:
+    filtered = recipes
+    if collection_filter == "books":
+        filtered = [
+            recipe
+            for recipe in filtered
+            if not cookbook_collection_map.get(recipe.cookbook_id)
+        ]
+    elif collection_filter != "all":
+        filtered = [
+            recipe
+            for recipe in filtered
+            if cookbook_collection_map.get(recipe.cookbook_id) == collection_filter
+        ]
+    if cookbook_filter != "all":
+        filtered = [recipe for recipe in filtered if recipe.cookbook_id == cookbook_filter]
+    return filtered
+
+
+def clamp_tag_page_size(value: int | None) -> int:
+    if value is None:
+        return 50
+    return min(max(value, 25), 200)
+
+
+def tag_pagination_window(page: int, page_count: int, *, radius: int = 2) -> list[int]:
+    if page_count <= 1:
+        return [1]
+    start = max(1, page - radius)
+    end = min(page_count, page + radius)
+    if start == 1:
+        end = min(page_count, start + radius * 2)
+    if end == page_count:
+        start = max(1, end - radius * 2)
+    return list(range(start, end + 1))
+
+
+def _metadata_list(value: Any) -> list[Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return value
+    return None
+
+
+def _dietary_override(recipe: RecipeRecord) -> list[str] | None:
+    raw_tags = _metadata_list((recipe.source.metadata or {}).get("dietary_tags_override"))
+    if raw_tags is None:
+        return None
+    tags: list[str] = []
+    for value in raw_tags:
+        cleaned = str(value).strip().casefold()
+        if cleaned in DIETARY_TAG_VALUES and cleaned not in tags:
+            tags.append(cleaned)
+    return tags
+
+
+def _seasonal_months_override(recipe: RecipeRecord) -> list[int] | None:
+    raw_months = _metadata_list((recipe.source.metadata or {}).get("seasonal_months_override"))
+    if raw_months is None:
+        return None
+    months: list[int] = []
+    for value in raw_months:
+        try:
+            month = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= month <= 12 and month not in months:
+            months.append(month)
+    return months
+
+
+def _seasonal_ingredients_override(recipe: RecipeRecord) -> list[str] | None:
+    raw_ingredients = _metadata_list((recipe.source.metadata or {}).get("seasonal_ingredients_override"))
+    if raw_ingredients is None:
+        return None
+    ingredients: list[str] = []
+    for value in raw_ingredients:
+        cleaned = canonicalize_ingredient_name(str(value))
+        if cleaned and cleaned not in ingredients:
+            ingredients.append(cleaned)
+    return ingredients
+
+
+def ingredient_classification_key(ingredient: Any) -> str:
+    if isinstance(ingredient, dict):
+        raw = str(ingredient.get("raw", "") or "")
+        normalized = str(ingredient.get("normalized_name", "") or "")
+        item = str(ingredient.get("item", "") or "")
+    else:
+        raw = str(getattr(ingredient, "raw", "") or "")
+        normalized = str(getattr(ingredient, "normalized_name", "") or "")
+        item = str(getattr(ingredient, "item", "") or "")
+    return canonicalize_ingredient_name(ingredient_index_name(ingredient) or item or normalized or raw)
+
+
+def _ingredient_classification_overrides(recipe: RecipeRecord) -> dict[str, str]:
+    raw_overrides = (recipe.source.metadata or {}).get("ingredient_classification_overrides")
+    if not isinstance(raw_overrides, dict):
+        return {}
+    overrides: dict[str, str] = {}
+    for key, value in raw_overrides.items():
+        cleaned_key = canonicalize_ingredient_name(str(key))
+        cleaned_value = str(value).strip().casefold()
+        if cleaned_key and cleaned_value in INGREDIENT_CLASSIFICATION_VALUES:
+            overrides[cleaned_key] = cleaned_value
+    return overrides
+
+
+def auto_ingredient_classification(ingredient: Any) -> str:
+    parts: list[str] = []
+    for attr in ("raw", "normalized_name", "canonical_name", "item"):
+        if isinstance(ingredient, dict):
+            parts.append(str(ingredient.get(attr, "") or ""))
+        else:
+            parts.append(str(getattr(ingredient, attr, "") or ""))
+    text = SEAFOOD_FALSE_POSITIVE_PATTERN.sub(" ", " ".join(parts).casefold())
+    if LAND_MEAT_PATTERN.search(text):
+        return "meat"
+    if SEAFOOD_PATTERN.search(text):
+        return "fish"
+    return "none"
+
+
+def ingredient_classification_rows(recipe: RecipeRecord) -> list[Any]:
+    overrides = _ingredient_classification_overrides(recipe)
+    rows: list[Any] = []
+    seen: set[str] = set()
+    for ingredient in recipe.ingredients:
+        key = ingredient_classification_key(ingredient)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        auto_value = auto_ingredient_classification(ingredient)
+        value = overrides.get(key, auto_value)
+        label = ingredient.raw or ingredient.item or ingredient.normalized_name or key
+        rows.append(
+            SimpleNamespace(
+                key=key,
+                label=label,
+                auto_classification=auto_value,
+                classification=value,
+                is_override=key in overrides,
+            )
+        )
+    return rows
+
+
+def ingredient_classification_summary(rows: list[Any]) -> str:
+    meat = [row.label for row in rows if row.classification == "meat"]
+    fish = [row.label for row in rows if row.classification == "fish"]
+    parts: list[str] = []
+    if meat:
+        parts.append(f"Meat: {', '.join(meat[:3])}{'...' if len(meat) > 3 else ''}")
+    if fish:
+        parts.append(f"Fish: {', '.join(fish[:3])}{'...' if len(fish) > 3 else ''}")
+    return " · ".join(parts) if parts else "No meat or fish ingredients tagged."
+
+
+def effective_recipe_dietary_tags(recipe: RecipeRecord) -> list[str]:
+    override = _dietary_override(recipe)
+    if override is not None:
+        return override
+    ingredient_rows = ingredient_classification_rows(recipe)
+    if any(row.classification == "meat" for row in ingredient_rows):
+        return []
+    if any(row.classification == "fish" for row in ingredient_rows):
+        return ["pescatarian"]
+    return ["vegetarian", "pescatarian"]
+
+
+def effective_recipe_seasonal_ingredients(recipe: RecipeRecord) -> list[str]:
+    override = _seasonal_ingredients_override(recipe)
+    return override if override is not None else main_seasonal_ingredients(recipe)
+
+
+def effective_recipe_seasonal_months(recipe: RecipeRecord) -> list[int]:
+    override = _seasonal_months_override(recipe)
+    if override is not None:
+        return override
+
+    ingredients = main_seasonal_ingredients(recipe)
+    if not ingredients:
+        return []
+    common_months = set(UK_SEASONAL_PRODUCE[ingredients[0]])
+    for ingredient in ingredients[1:]:
+        common_months &= set(UK_SEASONAL_PRODUCE[ingredient])
+    return sorted(common_months)
+
+
+def effective_recipe_is_in_season(recipe: RecipeRecord, *, month: int | None = None) -> bool:
+    effective_month = month or current_uk_month()
+    return effective_month in effective_recipe_seasonal_months(recipe)
+
+
+def recipe_tag_source(recipe: RecipeRecord) -> str:
+    has_dietary = _dietary_override(recipe) is not None
+    has_ingredients = bool(_ingredient_classification_overrides(recipe))
+    has_season = _seasonal_months_override(recipe) is not None or _seasonal_ingredients_override(recipe) is not None
+    has_dietary_side = has_dietary or has_ingredients
+    if has_dietary_side and has_season:
+        return "manual"
+    if has_dietary_side or has_season:
+        return "mixed"
+    return "auto"
+
+
+def _matched_terms(pattern: re.Pattern[str], value: str) -> list[str]:
+    terms: list[str] = []
+    for match in pattern.finditer(value):
+        term = " ".join(match.group(0).split()).casefold()
+        if term and term not in terms:
+            terms.append(term)
+    return terms
+
+
+def dietary_tag_explanation(recipe: RecipeRecord) -> str:
+    ingredient_rows = ingredient_classification_rows(recipe)
+    meat = [row.label for row in ingredient_rows if row.classification == "meat"]
+    fish = [row.label for row in ingredient_rows if row.classification == "fish"]
+    if meat:
+        return f"Contains meat: {', '.join(meat[:4])}."
+    if fish:
+        return f"Contains fish/seafood: {', '.join(fish[:4])}."
+    return "No meat or seafood detected."
+
+
+def seasonal_month_labels(months: list[int]) -> str:
+    return ", ".join(MONTH_LABELS[month] for month in months if month in MONTH_LABELS)
+
+
+def seasonality_explanation(recipe: RecipeRecord) -> str:
+    ingredients = effective_recipe_seasonal_ingredients(recipe)
+    if not ingredients:
+        return "No main seasonal produce detected."
+    return "Main produce: " + ", ".join(ingredients) + "."
+
+
+def build_recipe_tag_rows(
+    recipes: list[RecipeRecord],
+    *,
+    tag_filter: str = "all",
+    diet_filter: str = "all",
+    season_filter: str = "all",
+) -> list[Any]:
+    rows: list[Any] = []
+    current_month = current_uk_month()
+    for recipe in sorted(recipes, key=lambda item: (item.title.casefold(), item.cookbook_title.casefold())):
+        dietary_tags = effective_recipe_dietary_tags(recipe)
+        ingredient_rows = ingredient_classification_rows(recipe)
+        seasonal_ingredients = effective_recipe_seasonal_ingredients(recipe)
+        seasonal_months = effective_recipe_seasonal_months(recipe)
+        tag_source = recipe_tag_source(recipe)
+        in_season_now = current_month in seasonal_months
+        metadata = recipe.source.metadata or {}
+        row = SimpleNamespace(
+            recipe=recipe,
+            dietary_tags=dietary_tags,
+            is_vegetarian="vegetarian" in dietary_tags,
+            is_pescatarian="pescatarian" in dietary_tags,
+            dietary_is_auto=_dietary_override(recipe) is None,
+            dietary_explanation=dietary_tag_explanation(recipe),
+            ingredient_classification_rows=ingredient_rows,
+            ingredient_classification_summary=ingredient_classification_summary(ingredient_rows),
+            seasonal_ingredients=seasonal_ingredients,
+            seasonal_ingredients_text=", ".join(seasonal_ingredients),
+            seasonal_months=seasonal_months,
+            seasonal_month_labels=seasonal_month_labels(seasonal_months),
+            seasonal_is_auto=_seasonal_months_override(recipe) is None and _seasonal_ingredients_override(recipe) is None,
+            seasonality_explanation=seasonality_explanation(recipe),
+            in_season_now=in_season_now,
+            tag_source=tag_source,
+            note=str(metadata.get("tag_review_note") or ""),
+            reviewed_at=str(metadata.get("tag_reviewed_at") or ""),
+            needs_review=recipe.review.status == "needs_review" or bool(recipe.extraction.needs_review_reasons),
+        )
+        if tag_filter == "manual" and tag_source == "auto":
+            continue
+        if tag_filter == "needs-review" and not row.needs_review:
+            continue
+        if tag_filter == "vegetarian" and not row.is_vegetarian:
+            continue
+        if tag_filter == "pescatarian" and not row.is_pescatarian:
+            continue
+        if tag_filter == "in-season" and not row.in_season_now:
+            continue
+        if tag_filter == "no-seasonal-produce" and row.seasonal_ingredients:
+            continue
+        if diet_filter != "all" and diet_filter not in row.dietary_tags:
+            continue
+        if season_filter == "in-season" and not row.in_season_now:
+            continue
+        if season_filter == "no-seasonal-produce" and row.seasonal_ingredients:
+            continue
+        if season_filter.startswith("month-"):
+            try:
+                month = int(season_filter.removeprefix("month-"))
+            except ValueError:
+                month = 0
+            if month not in row.seasonal_months:
+                continue
+        rows.append(row)
+    return rows
 
 
 def load_meal_plan_document(repository: LibraryRepository) -> tuple[MealPlanDocument, list[str]]:
@@ -562,14 +961,14 @@ def recipe_matches_duration_filter(recipe: RecipeRecord, duration_filter: str) -
 def recipe_matches_dietary_filter(recipe: RecipeRecord, dietary_filter: str) -> bool:
     if not dietary_filter:
         return True
-    return dietary_filter in recipe_dietary_tags(recipe)
+    return dietary_filter in effective_recipe_dietary_tags(recipe)
 
 
 def recipe_matches_season_filter(recipe: RecipeRecord, season_filter: str) -> bool:
     if not season_filter:
         return True
     if season_filter == "in-season":
-        return recipe_is_in_season(recipe)
+        return effective_recipe_is_in_season(recipe)
     return True
 
 
@@ -606,8 +1005,10 @@ def filter_search_results(
 
 
 templates.env.globals["recipe_dietary_tags"] = recipe_dietary_tags
+templates.env.globals["effective_recipe_dietary_tags"] = effective_recipe_dietary_tags
 templates.env.globals["recipe_duration_minutes"] = recipe_duration_minutes
 templates.env.globals["recipe_is_in_season"] = recipe_is_in_season
+templates.env.globals["effective_recipe_is_in_season"] = effective_recipe_is_in_season
 templates.env.globals["main_seasonal_ingredients"] = main_seasonal_ingredients
 
 
@@ -933,6 +1334,106 @@ async def manage_cookbooks_page(
         }
     )
     return templates.TemplateResponse(request=request, name="manage_cookbooks.html", context=context)
+
+
+@app.get("/library/tags", response_class=HTMLResponse)
+async def manage_recipe_tags_page(
+    request: Request,
+    notice: str | None = Query(default=None),
+    tag_filter: str | None = Query(default="all", alias="filter"),
+    collection: str | None = Query(default="all"),
+    cookbook: str | None = Query(default="all"),
+    diet: str | None = Query(default="all"),
+    season: str | None = Query(default="all"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
+) -> HTMLResponse:
+    repository = get_repository(request)
+    cookbooks = repository.list_cookbooks(include_collection_items=True)
+    collections = repository.list_recipe_collections()
+    selected_filter = normalize_tag_review_filter(tag_filter)
+    selected_collection = normalize_tag_collection_filter(collection, cookbooks, collections)
+    selected_cookbook = normalize_tag_cookbook_filter(cookbook, cookbooks)
+    selected_diet = normalize_tag_diet_filter(diet)
+    selected_season = normalize_tag_season_filter(season)
+    cookbook_collection_map = {
+        cookbook.id: cookbook.collection_slug or ""
+        for cookbook in cookbooks
+    }
+    if selected_cookbook != "all" and selected_collection != "all":
+        cookbook_collection = cookbook_collection_map.get(selected_cookbook, "")
+        if (selected_collection == "books" and cookbook_collection) or (
+            selected_collection != "books" and cookbook_collection != selected_collection
+        ):
+            selected_cookbook = "all"
+    recipes = filter_recipes_for_tag_management(
+        repository.list_recipes(),
+        cookbook_filter=selected_cookbook,
+        collection_filter=selected_collection,
+        cookbook_collection_map=cookbook_collection_map,
+    )
+    rows = build_recipe_tag_rows(
+        recipes,
+        tag_filter=selected_filter,
+        diet_filter=selected_diet,
+        season_filter=selected_season,
+    )
+    total_rows = len(rows)
+    selected_page_size = clamp_tag_page_size(page_size)
+    page_count = max(1, (total_rows + selected_page_size - 1) // selected_page_size)
+    selected_page = min(max(page, 1), page_count)
+    page_start = (selected_page - 1) * selected_page_size
+    page_end = page_start + selected_page_size
+    page_rows = rows[page_start:page_end]
+    page_url_params = {
+        "filter": selected_filter,
+        "collection": selected_collection,
+        "cookbook": selected_cookbook,
+        "diet": selected_diet,
+        "season": selected_season,
+        "page_size": selected_page_size,
+    }
+    page_base_url = str(request.url_for("manage_recipe_tags_page"))
+
+    def tag_page_url(page_number: int) -> str:
+        return f"{page_base_url}?{urlencode({**page_url_params, 'page': page_number})}"
+
+    cookbook_options = recipe_tag_cookbook_options(cookbooks, collection_filter=selected_collection)
+    context = common_template_context(request, notice=notice)
+    context.update(
+        {
+            "recipe_tag_rows": page_rows,
+            "recipe_tag_total_rows": total_rows,
+            "recipe_tag_page": selected_page,
+            "recipe_tag_page_count": page_count,
+            "recipe_tag_page_size": selected_page_size,
+            "recipe_tag_page_size_options": (25, 50, 100, 200),
+            "recipe_tag_page_start": page_start + 1 if total_rows else 0,
+            "recipe_tag_page_end": min(page_end, total_rows),
+            "recipe_tag_previous_page_url": tag_page_url(selected_page - 1) if selected_page > 1 else "",
+            "recipe_tag_next_page_url": tag_page_url(selected_page + 1) if selected_page < page_count else "",
+            "recipe_tag_page_links": [
+                {"number": page_number, "url": tag_page_url(page_number)}
+                for page_number in tag_pagination_window(selected_page, page_count)
+            ],
+            "recipe_tag_filter": selected_filter,
+            "recipe_tag_filter_options": TAG_REVIEW_FILTER_OPTIONS,
+            "recipe_tag_collection": selected_collection,
+            "recipe_tag_collection_options": recipe_tag_collection_options(collections),
+            "recipe_tag_cookbook": selected_cookbook,
+            "recipe_tag_cookbook_options": cookbook_options,
+            "recipe_tag_diet": selected_diet,
+            "recipe_tag_diet_options": (
+                {"value": "all", "label": "Any diet"},
+                *DIETARY_FILTER_OPTIONS,
+            ),
+            "recipe_tag_season": selected_season,
+            "recipe_tag_season_options": TAG_SEASON_FILTER_OPTIONS,
+            "month_options": MONTH_OPTIONS,
+            "current_uk_month": current_uk_month(),
+        }
+    )
+    return templates.TemplateResponse(request=request, name="manage_recipe_tags.html", context=context)
 
 
 @app.get("/search", response_class=HTMLResponse)
@@ -1708,6 +2209,70 @@ async def update_recipe_review(recipe_id: str, payload: ReviewUpdateRequest, req
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found.")
     return recipe.model_dump()
+
+
+@app.patch("/api/recipes/{recipe_id}/tags")
+async def update_recipe_tags(recipe_id: str, payload: RecipeTagsUpdateRequest, request: Request) -> dict[str, Any]:
+    dietary_tags: list[str] | None = None
+    if payload.dietary_tags is not None:
+        dietary_tags = []
+        for value in payload.dietary_tags:
+            cleaned = str(value).strip().casefold()
+            if cleaned in DIETARY_TAG_VALUES and cleaned not in dietary_tags:
+                dietary_tags.append(cleaned)
+
+    seasonal_months: list[int] | None = None
+    if payload.seasonal_months is not None:
+        seasonal_months = []
+        for value in payload.seasonal_months:
+            try:
+                month = int(value)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= month <= 12 and month not in seasonal_months:
+                seasonal_months.append(month)
+        seasonal_months.sort()
+
+    seasonal_ingredients: list[str] | None = None
+    if payload.seasonal_ingredients is not None:
+        seasonal_ingredients = []
+        for value in payload.seasonal_ingredients:
+            cleaned = canonicalize_ingredient_name(str(value))
+            if cleaned and cleaned not in seasonal_ingredients:
+                seasonal_ingredients.append(cleaned)
+
+    ingredient_classifications: dict[str, str] | None = None
+    if payload.ingredient_classifications is not None:
+        ingredient_classifications = {}
+        for key, value in payload.ingredient_classifications.items():
+            cleaned_key = canonicalize_ingredient_name(str(key))
+            cleaned_value = str(value).strip().casefold()
+            if cleaned_key and cleaned_value in INGREDIENT_CLASSIFICATION_VALUES:
+                ingredient_classifications[cleaned_key] = cleaned_value
+
+    repository = get_repository(request)
+    recipe = repository.update_recipe_tags(
+        recipe_id,
+        dietary_tags=dietary_tags,
+        seasonal_months=seasonal_months,
+        seasonal_ingredients=seasonal_ingredients,
+        ingredient_classifications=ingredient_classifications,
+        note=(payload.note or "").strip() or None,
+    )
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found.")
+
+    return {
+        "recipe_id": recipe.id,
+        "dietary_tags": effective_recipe_dietary_tags(recipe),
+        "seasonal_months": effective_recipe_seasonal_months(recipe),
+        "seasonal_ingredients": effective_recipe_seasonal_ingredients(recipe),
+        "seasonal_month_labels": seasonal_month_labels(effective_recipe_seasonal_months(recipe)),
+        "ingredient_classification_summary": ingredient_classification_summary(ingredient_classification_rows(recipe)),
+        "in_season_now": effective_recipe_is_in_season(recipe),
+        "tag_source": recipe_tag_source(recipe),
+        "note": (recipe.source.metadata or {}).get("tag_review_note") or "",
+    }
 
 
 @app.get("/api/recipes/{recipe_id}/images/{image_index}")

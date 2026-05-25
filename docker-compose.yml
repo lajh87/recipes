@@ -45,6 +45,23 @@ services:
     networks:
       - datastores
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: recipe-library-cloudflared
+    restart: unless-stopped
+    profiles: ["cloudflared"]
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CLOUDFLARED_TOKEN:-}
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - default
+
 networks:
   datastores:
     external: true

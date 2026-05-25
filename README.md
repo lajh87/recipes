@@ -114,6 +114,30 @@ docker compose up --build
 
 6. Open `http://localhost:8080`.
 
+## Cloudflare Tunnel
+
+The Compose file includes an optional `cloudflared` profile for exposing the app through a Cloudflare Tunnel. The tunnel must forward to the private Docker service URL `http://app:8080`, so the app container does not need to be published publicly.
+
+1. Create a named tunnel in the Cloudflare dashboard or with the `cloudflared` CLI, then route a hostname to it.
+
+2. In the tunnel's public hostname settings, set the service URL to `http://app:8080`.
+
+   Do not use `http://localhost:8080` for the service URL when running `cloudflared` in Docker. Inside the Cloudflared container, `localhost` points to the Cloudflared container itself, not the app container.
+
+3. Add the tunnel token to `.env`.
+
+```bash
+CLOUDFLARED_TOKEN=your_cloudflare_tunnel_token
+```
+
+4. Start the app, worker, and tunnel.
+
+```bash
+docker compose --profile cloudflared up --build
+```
+
+For local-only use, keep using `docker compose up --build` and open `http://localhost:8080`.
+
 ## Configuration
 
 The main runtime settings live in `.env.example`.
@@ -133,6 +157,7 @@ Important values:
 - `OPENAI_EMBEDDING_MODEL`
 - `OPENAI_SEARCH_MODEL`
 - `DATASTORE_NETWORK_NAME`
+- `CLOUDFLARED_TOKEN`
 
 Default upload limits and types:
 

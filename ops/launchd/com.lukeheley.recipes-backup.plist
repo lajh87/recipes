@@ -5,17 +5,17 @@
   <key>Label</key>
   <string>com.lukeheley.recipes-backup</string>
 
-  <key>WorkingDirectory</key>
-  <string>/Users/lukeheley/Developer/recipes</string>
-
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/lukeheley/Developer/recipes/scripts/backup_recipes.sh</string>
-    <string>/Users/lukeheley/Developer/recipes/scripts/recipes_backup.env</string>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd "$RECIPES_ROOT" &amp;&amp; exec scripts/backup_recipes.sh scripts/recipes_backup.env</string>
   </array>
 
   <key>EnvironmentVariables</key>
   <dict>
+    <key>RECIPES_ROOT</key>
+    <string>/Volumes/Samsung SSD 9100 PRO 1TB/Developer/recipes</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>

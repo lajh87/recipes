@@ -819,6 +819,26 @@ function initMealPlanAutoLink() {
     }
   }
 
+  function setMealPlanRowExpanded(row, expanded) {
+    if (!(row instanceof HTMLElement)) {
+      return;
+    }
+
+    row.classList.toggle("is-expanded", expanded);
+    const toggle = row.querySelector("[data-meal-plan-row-toggle]");
+    if (!(toggle instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    toggle.setAttribute("aria-label", expanded ? "Hide meal details" : "Show meal details");
+    toggle.textContent = expanded ? "Hide" : "Details";
+  }
+
+  function expandMealPlanRow(row) {
+    setMealPlanRowExpanded(row, true);
+  }
+
   mealPlanForm.addEventListener("submit", () => {
     window.clearTimeout(autosaveTimer);
     if (autosaveController) {
@@ -863,8 +883,33 @@ function initMealPlanAutoLink() {
   mealPlanForm.addEventListener("focusin", (event) => {
     const itemInput = event.target.closest("[data-meal-plan-item]");
     if (itemInput instanceof HTMLInputElement) {
+      expandMealPlanRow(itemInput.closest("[data-meal-plan-row]"));
       void loadMealPlanRecipeSuggestions(itemInput.value);
     }
+  });
+
+  mealPlanForm.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+
+    const row = event.target.closest("[data-meal-plan-row]");
+    if (!(row instanceof HTMLElement)) {
+      return;
+    }
+
+    const rowToggle = event.target.closest("[data-meal-plan-row-toggle]");
+    if (rowToggle instanceof HTMLButtonElement) {
+      setMealPlanRowExpanded(row, !row.classList.contains("is-expanded"));
+      return;
+    }
+
+    const clickedControl = event.target.closest("a, button, input, select, textarea, label");
+    if (clickedControl instanceof HTMLElement && !clickedControl.closest(".meal-plan-row__item")) {
+      return;
+    }
+
+    expandMealPlanRow(row);
   });
 
   mealPlanForm.querySelectorAll("[data-meal-plan-item]").forEach((input) => {

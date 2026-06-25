@@ -206,9 +206,9 @@ The UI is backed by a small JSON API:
 
 ## Development Notes
 
-- The container image is defined in [Dockerfile](/Users/lukeheley/Developer/recipes/Dockerfile).
-- Runtime dependencies are listed in [requirements.txt](/Users/lukeheley/Developer/recipes/requirements.txt).
-- Tests live under [tests](/Users/lukeheley/Developer/recipes/tests). The repository does not pin `pytest` in `requirements.txt`, so install it separately if you run tests outside your own dev environment.
+- The container image is defined in [Dockerfile](Dockerfile).
+- Runtime dependencies are listed in [requirements.txt](requirements.txt).
+- Tests live under [tests](tests). The repository does not pin `pytest` in `requirements.txt`, so install it separately if you run tests outside your own dev environment.
 - Once `pytest` is available, run the suite with `python -m pytest tests`.
 - The app performs tolerant startup schema checks, so a broken datastore connection does not necessarily stop the web process from booting.
 
@@ -216,10 +216,10 @@ The UI is backed by a small JSON API:
 
 The repository includes app-scoped backup tooling for the shared datastore layout:
 
-- [scripts/backup_recipes.sh](/Users/lukeheley/Developer/recipes/scripts/backup_recipes.sh) builds and optionally pushes dated GHCR image tags, exports the MinIO bucket, exports Redis keys under the configured prefix, snapshots the Qdrant collections, and prunes old backups
-- [scripts/restore_recipes.sh](/Users/lukeheley/Developer/recipes/scripts/restore_recipes.sh) restores those artifacts into the local datastore stack
-- [scripts/recipes_backup.env.example](/Users/lukeheley/Developer/recipes/scripts/recipes_backup.env.example) is the configuration template for both scripts
-- [ops/launchd/com.lukeheley.recipes-backup.plist](/Users/lukeheley/Developer/recipes/ops/launchd/com.lukeheley.recipes-backup.plist) is a macOS `launchd` template for scheduled weekly backups
+- [scripts/backup_recipes.sh](scripts/backup_recipes.sh) builds and optionally pushes dated GHCR image tags, exports the MinIO bucket, exports Redis keys under the configured prefix, snapshots the Qdrant collections, and prunes old backups
+- [scripts/restore_recipes.sh](scripts/restore_recipes.sh) restores those artifacts into the local datastore stack
+- [scripts/recipes_backup.env.example](scripts/recipes_backup.env.example) is the configuration template for both scripts
+- [ops/launchd/com.lukeheley.recipes-backup.plist](ops/launchd/com.lukeheley.recipes-backup.plist) is a macOS `launchd` template for scheduled weekly backups
 
 Basic setup:
 

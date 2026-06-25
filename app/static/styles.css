@@ -1870,6 +1870,7 @@ input[type="search"]:focus,
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 18px;
   align-items: end;
+  min-width: 0;
 }
 
 .meal-plan-week__title-group,
@@ -1906,6 +1907,13 @@ input[type="search"]:focus,
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.meal-plan-week__actions .button {
+  max-width: 100%;
+  white-space: normal;
 }
 
 .meal-plan-week__entries {
@@ -1928,7 +1936,7 @@ input[type="search"]:focus,
 
 .meal-plan-row {
   display: grid;
-  grid-template-columns: minmax(0, 2.2fr) minmax(420px, 1.4fr);
+  grid-template-columns: minmax(260px, 2.2fr) minmax(320px, 1.4fr);
   gap: 12px;
   align-items: center;
   padding: 14px 16px;
@@ -1936,6 +1944,8 @@ input[type="search"]:focus,
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 8px 20px rgba(17, 17, 17, 0.035);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .meal-plan-row.is-complete {
@@ -1947,14 +1957,16 @@ input[type="search"]:focus,
 .meal-plan-row__field {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .meal-plan-row__meta {
   display: grid;
-  grid-template-columns: minmax(112px, 1fr) minmax(112px, 1fr) 72px minmax(128px, 1fr);
+  grid-template-columns: minmax(92px, 1fr) minmax(92px, 1fr) minmax(60px, 0.55fr) minmax(110px, 1fr);
   gap: 10px;
   align-items: stretch;
   min-width: 0;
+  max-width: 100%;
 }
 
 .meal-plan-row__label {
@@ -1980,10 +1992,16 @@ input[type="search"]:focus,
 .meal-plan-row__item input {
   font-size: 1.05rem;
   padding: 15px 16px;
+  min-width: 0;
+}
+
+.meal-plan-row__toggle {
+  display: none;
 }
 
 .meal-plan-row__field input {
   min-height: 52px;
+  min-width: 0;
 }
 
 .meal-plan-row__done {
@@ -1996,6 +2014,7 @@ input[type="search"]:focus,
   border-radius: var(--radius-md);
   background: var(--surface-muted);
   min-height: 100%;
+  min-width: 0;
 }
 
 .meal-plan-row__done input {
@@ -2008,12 +2027,16 @@ input[type="search"]:focus,
   display: grid;
   gap: 8px;
   min-height: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .meal-plan-row__action .button {
   width: 100%;
+  max-width: 100%;
   min-height: 100%;
   padding-inline: 12px;
+  white-space: normal;
 }
 
 .meal-plan-row__action-placeholder {
@@ -2021,12 +2044,15 @@ input[type="search"]:focus,
   align-items: center;
   justify-content: center;
   inline-size: 100%;
+  max-inline-size: 100%;
   min-block-size: 52px;
   padding: 12px 14px;
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius-md);
   color: var(--muted);
   background: rgba(255, 255, 255, 0.78);
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .meal-plan-shopping {
@@ -2728,6 +2754,18 @@ input[type="search"]:focus,
     justify-content: flex-start;
   }
 
+  .meal-plan-week__actions .button {
+    flex: 1 1 150px;
+  }
+
+  .meal-plan-row {
+    grid-template-columns: 1fr;
+  }
+
+  .meal-plan-row__meta {
+    grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(72px, 0.55fr) minmax(132px, 1fr);
+  }
+
   .metadata-row__tag-list {
     justify-content: flex-start;
   }
@@ -2825,6 +2863,12 @@ input[type="search"]:focus,
     flex-direction: column;
   }
 
+  .hero,
+  .page-hero,
+  .panel {
+    padding: 16px;
+  }
+
   .meal-plan-form,
   .meal-plan-stack,
   .meal-plan-week,
@@ -2834,6 +2878,10 @@ input[type="search"]:focus,
 
   .meal-plan-week {
     background: var(--surface);
+  }
+
+  .meal-plan-week.panel {
+    padding: 10px;
   }
 
   .meal-plan-week--latest {
@@ -2868,6 +2916,8 @@ input[type="search"]:focus,
 
   .meal-plan-week__actions {
     gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .meal-plan-week__actions .pill {
@@ -2876,17 +2926,24 @@ input[type="search"]:focus,
 
   .meal-plan-week__actions .button,
   .meal-plan-form__footer .button {
+    width: 100%;
     padding: 7px 9px;
     min-height: 34px;
     font-size: 0.82rem;
   }
 
   .meal-plan-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr;
     gap: 6px;
-    padding: 5px 6px;
+    padding: 7px;
     border-radius: var(--radius-sm);
     box-shadow: none;
+  }
+
+  .meal-plan-row__item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    cursor: pointer;
   }
 
   .meal-plan-row__label--column {
@@ -2906,6 +2963,10 @@ input[type="search"]:focus,
     gap: 0;
   }
 
+  .meal-plan-row__item {
+    gap: 6px;
+  }
+
   .meal-plan-row__item input {
     min-height: 38px;
     padding: 8px 9px;
@@ -2913,10 +2974,36 @@ input[type="search"]:focus,
     border-radius: 8px;
   }
 
-  .meal-plan-row__meta {
-    grid-template-columns: 44px 58px 30px 34px;
-    gap: 4px;
+  .meal-plan-row__toggle {
+    display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    min-height: 38px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-muted);
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  .meal-plan-row.is-expanded .meal-plan-row__toggle {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--surface);
+  }
+
+  .meal-plan-row__meta {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 42px minmax(58px, 0.8fr);
+    gap: 6px;
+    align-items: center;
+    display: none;
+  }
+
+  .meal-plan-row.is-expanded .meal-plan-row__meta {
+    display: grid;
   }
 
   .meal-plan-row__field input {
@@ -2944,6 +3031,8 @@ input[type="search"]:focus,
 
   .meal-plan-row__action .button,
   .meal-plan-row__action-placeholder {
+    width: 100%;
+    max-width: 100%;
     min-block-size: 38px;
     min-height: 38px;
     padding: 0;
@@ -2962,7 +3051,7 @@ input[type="search"]:focus,
   }
 
   .meal-plan-shopping {
-    padding: 10px;
+    padding: 8px;
     border-radius: var(--radius-md);
   }
 

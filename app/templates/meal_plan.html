@@ -63,6 +63,7 @@
                 <a class="button button--secondary" href="{{ url_for('search_page') }}">Search</a>
                 <button class="button button--secondary" type="submit" name="planner_action" value="add_week">Add Week</button>
                 <button class="button button--secondary" type="submit" name="planner_action" value="add_row:{{ week.id }}">Add Row</button>
+                <button class="button button--secondary" type="submit" name="planner_action" value="remove:{{ week.id }}">Remove Week</button>
               </div>
             </div>
         {% else %}
@@ -120,8 +121,18 @@
                     data-meal-plan-item
                     autocomplete="off"
                   />
+                  <button
+                    class="meal-plan-row__toggle"
+                    type="button"
+                    aria-controls="meal-details-{{ week.id }}-{{ entry.id }}"
+                    aria-expanded="false"
+                    aria-label="Show meal details"
+                    data-meal-plan-row-toggle
+                  >
+                    Details
+                  </button>
                 </div>
-                <div class="meal-plan-row__meta">
+                <div id="meal-details-{{ week.id }}-{{ entry.id }}" class="meal-plan-row__meta">
                   <div class="meal-plan-row__field">
                     <label class="meal-plan-row__label meal-plan-row__label--column" for="meal-weekday-{{ week.id }}-{{ entry.id }}">Day</label>
                     <input

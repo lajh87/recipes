@@ -170,6 +170,22 @@ BRAND_IMAGE_MAP = {
 }
 
 
+def normalize_forwarded_prefix(value: str | None) -> str:
+    prefix = (value or "").strip()
+    if not prefix:
+        return ""
+    prefix = "/" + prefix.strip("/")
+    return "" if prefix == "/" else prefix
+
+
+@app.middleware("http")
+async def apply_forwarded_prefix(request: Request, call_next):
+    prefix = normalize_forwarded_prefix(request.headers.get("x-forwarded-prefix"))
+    if prefix and not request.scope.get("path", "").startswith("/static/"):
+        request.scope["root_path"] = prefix
+    return await call_next(request)
+
+
 def get_repository(request: Request) -> LibraryRepository:
     return request.app.state.repository
 

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from app.main import app, index
+from app.main import app, index, normalize_forwarded_prefix
 
 
 class NavigationTests(unittest.TestCase):
@@ -23,6 +23,13 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(str(app.url_path_for("meal_plan_page")), "/meal-plan")
         self.assertEqual(str(app.url_path_for("library_page")), "/library")
         self.assertEqual(str(app.url_path_for("manage_recipe_tags_page")), "/library/tags")
+
+    def test_forwarded_prefix_is_normalized_for_proxy_mounts(self) -> None:
+        self.assertEqual(normalize_forwarded_prefix(None), "")
+        self.assertEqual(normalize_forwarded_prefix(""), "")
+        self.assertEqual(normalize_forwarded_prefix("/"), "")
+        self.assertEqual(normalize_forwarded_prefix("recipes"), "/recipes")
+        self.assertEqual(normalize_forwarded_prefix("/recipes/"), "/recipes")
 
     def test_base_nav_lists_meal_plan_before_library_without_tags(self) -> None:
         base_template = (Path(__file__).resolve().parent.parent / "app" / "templates" / "base.html").read_text()

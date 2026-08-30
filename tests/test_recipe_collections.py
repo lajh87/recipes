@@ -68,6 +68,15 @@ class RecipeCollectionTests(unittest.TestCase):
 
         self.assertIn("waitrose-recipes", [collection.slug for collection in collections])
 
+    def test_other_collection_is_listed_last(self) -> None:
+        repository = object.__new__(LibraryRepository)
+        repository.list_recipes_for_collection = lambda slug: []  # type: ignore[method-assign]
+
+        collections = repository.list_recipe_collections()
+
+        self.assertEqual(collections[-1].slug, "other")
+        self.assertFalse(collections[-1].allow_upload)
+
     def test_display_title_strips_library_suffixes(self) -> None:
         repository = object.__new__(LibraryRepository)
 

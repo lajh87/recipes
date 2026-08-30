@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import hashlib
 from typing import Optional
 
 from pydantic import Field
@@ -74,6 +75,17 @@ class Settings(BaseSettings):
 
     def recipe_reference_key(self, recipe_id: str) -> str:
         return f"{self.redis_key_prefix}:recipes:refs:{recipe_id}"
+
+    def recipe_source_url_key(self, normalized_url: str) -> str:
+        digest = hashlib.sha256(normalized_url.encode("utf-8")).hexdigest()
+        return f"{self.redis_key_prefix}:recipes:source-urls:{digest}"
+
+    def recipe_source_url_lock_key(self, normalized_url: str) -> str:
+        digest = hashlib.sha256(normalized_url.encode("utf-8")).hexdigest()
+        return f"{self.redis_key_prefix}:recipes:source-url-locks:{digest}"
+
+    def recipe_import_preview_key(self, import_id: str) -> str:
+        return f"{self.redis_key_prefix}:recipe-import-previews:{import_id}"
 
     @property
     def favorite_recipe_index_key(self) -> str:

@@ -6,6 +6,7 @@ Heley Family Cookbook is a Dockerised FastAPI application for building a private
 
 - stages cookbook uploads and derives cover art and metadata where possible
 - extracts structured recipes, ingredient lists, method steps, images, and source evidence
+- imports recipes from public webpage URLs through an editable OpenAI-backed preview, with a domain-restricted OpenAI web-search fallback when the origin will not answer the server directly
 - supports two ingestion paths:
   - queued OpenAI-backed extraction for general cookbooks and ebooks
   - synchronous source-specific PDF extraction for `NYTimes`, `Jamie Oliver`, `BBC Good Food`, and `Waitrose Recipes`
@@ -62,6 +63,7 @@ Built-in collections include:
 - `jamie-oliver`
 - `bbc-goodfood`
 - `waitrose-recipes`
+- `other`
 
 The last four are also upload targets for source-specific PDF parsing.
 
@@ -181,6 +183,8 @@ The UI is backed by a small JSON API:
 - `GET /api/ingredients`
 - `GET /api/search`
 - `GET /api/meal-plan/recipe-suggestions`
+- `POST /api/recipe-imports/preview`
+- `POST /api/recipe-imports/{import_id}/commit`
 
 ## Repository Layout
 

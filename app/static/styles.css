@@ -421,6 +421,12 @@ input[type="search"]:focus,
   justify-content: flex-end;
 }
 
+.hero__actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+}
+
 .upload-inline {
   grid-template-columns: auto;
   align-items: center;
@@ -1212,6 +1218,224 @@ input[type="search"]:focus,
 
 .feedback--inline {
   margin: 0;
+}
+
+.recipe-import-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(900px, calc(100vh - 32px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 80px rgba(17, 17, 17, 0.24);
+}
+
+.recipe-import-dialog::backdrop {
+  background: rgba(20, 18, 15, 0.58);
+  backdrop-filter: blur(3px);
+}
+
+.recipe-import-dialog.is-fallback-open {
+  display: block;
+  position: fixed;
+  inset: 4vh auto auto 50%;
+  z-index: 1001;
+  width: min(760px, calc(100vw - 2rem));
+  max-height: 92vh;
+  transform: translateX(-50%);
+}
+
+body.is-recipe-import-open {
+  overflow: hidden;
+}
+
+body.is-recipe-import-fallback::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(20, 18, 15, 0.58);
+  backdrop-filter: blur(3px);
+}
+
+.recipe-import-dialog__shell {
+  display: grid;
+  gap: 20px;
+  padding: 26px;
+}
+
+.recipe-import-dialog__header,
+.recipe-import-dialog__url-row,
+.recipe-import-dialog__source,
+.recipe-import-dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.recipe-import-dialog__header,
+.recipe-import-dialog__source {
+  justify-content: space-between;
+}
+
+.recipe-import-dialog__header h2,
+.recipe-import-dialog__header p,
+.recipe-import-dialog__feedback,
+.recipe-import-dialog__progress p {
+  margin: 0;
+}
+
+.recipe-import-dialog__close {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  inline-size: 42px;
+  block-size: 42px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.recipe-import-dialog__url-step,
+.recipe-import-dialog__preview {
+  display: grid;
+  gap: 16px;
+}
+
+.recipe-import-dialog__preview[hidden],
+.recipe-import-dialog__url-step[hidden] {
+  display: none;
+}
+
+.recipe-import-dialog__url-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.recipe-import-dialog__preview label {
+  display: grid;
+  gap: 7px;
+  font-weight: 700;
+}
+
+.recipe-import-dialog__preview label small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.recipe-import-dialog__preview textarea {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.recipe-import-dialog__source {
+  align-items: start;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.recipe-import-dialog__source > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.recipe-import-dialog__source .text-link {
+  overflow-wrap: anywhere;
+}
+
+.recipe-import-dialog__meta-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.recipe-import-dialog__metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recipe-import-dialog__metadata-block {
+  display: grid;
+  flex: 1 0 100%;
+  gap: 4px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--surface-muted);
+}
+
+.recipe-import-dialog__metadata-block p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.recipe-import-dialog__source-links {
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.recipe-import-dialog__progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.recipe-import-dialog__progress[hidden] {
+  display: none;
+}
+
+.recipe-import-dialog__spinner {
+  inline-size: 22px;
+  block-size: 22px;
+  border: 3px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: recipe-import-spin 800ms linear infinite;
+}
+
+.recipe-import-dialog__feedback[data-state="error"] {
+  color: var(--danger, #8d261f);
+}
+
+@keyframes recipe-import-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .recipe-import-dialog__shell {
+    padding: 20px;
+  }
+
+  .recipe-import-dialog__url-row,
+  .recipe-import-dialog__source,
+  .recipe-import-dialog__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .recipe-import-dialog__url-row .button,
+  .recipe-import-dialog__actions .button {
+    width: 100%;
+  }
 }
 
 .shelf {

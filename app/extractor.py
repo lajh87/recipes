@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import fitz
 from bs4 import BeautifulSoup
@@ -302,6 +303,48 @@ class RecipeExtractionPayload(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+def parse_ingredient_line(raw: str) -> ExtractedIngredient:
+    cleaned = " ".join(raw.split()).strip()
+    lowered = cleaned.casefold()
+    preparation = None
+    base = cleaned
+    if "," in cleaned:
+        base, trailing = cleaned.split(",", 1)
+        preparation = trailing.strip() or None
+
+    quantity_match = LEADING_QUANTITY_RE.match(base)
+    quantity = quantity_match.group(0).strip() if quantity_match else None
+    remainder = base[quantity_match.end() :] if quantity_match else base
+
+    unit_match = LEADING_UNIT_RE.match(remainder)
+    unit = unit_match.group(0).strip() if unit_match else None
+    item = remainder[unit_match.end() :] if unit_match else remainder
+    item = re.sub(r"\s*\([^)]*\)", "", item).strip(" .;:-")
+    item = re.sub(r"^(?:of\s+)", "", item, flags=re.IGNORECASE)
+
+    normalized_name = normalize_extracted_ingredient_name(item or cleaned)
+    return ExtractedIngredient.model_validate(
+        build_ingredient_payload(
+            raw=cleaned,
+            normalized_name=normalized_name,
+            quantity=quantity,
+            unit=unit,
+            item=item or None,
+            preparation=preparation,
+            optional="optional" in lowered,
+        )
+    )
+
+
+def normalize_extracted_ingredient_name(value: str) -> str:
+    normalized = value.casefold()
+    normalized = re.sub(r"\s*\([^)]*\)", " ", normalized)
+    normalized = re.sub(r"\b(?:for|plus)\b.*$", "", normalized).strip()
+    normalized = re.sub(r"^(?:a|an|the)\s+", "", normalized)
+    normalized = normalize_ingredient_text(normalized)
+    return normalized or "ingredient"
+
+
 @dataclass
 class CandidateImage:
     filename: str
@@ -456,6 +499,98 @@ class OpenAIRecipeExtractor:
         )
         return [item.embedding for item in response.data]
 
+    def extract_url_payload(
+        self,
+        *,
+        source_name: str,
+        source_url: str,
+        page_text: str,
+        excerpt: str,
+    ) -> RecipeExtractionPayload:
+        section = CandidateSection(
+            source_format="url",
+            section_key=source_url,
+            anchor=source_url,
+            chapter_title=None,
+            text=page_text,
+            excerpt=excerpt,
+        )
+        payload = self._extract_recipe_payload(source_name, section)
+        self._validate_complete_url_payload(payload)
+        return payload
+
+    def extract_url_with_web_search(
+        self,
+        *,
+        source_url: str,
+        hostname: str,
+    ) -> tuple[RecipeExtractionPayload, list[str]]:
+        schema = self._strict_json_schema(RecipeExtractionPayload.model_json_schema())
+        response = self.client.responses.create(
+            model=self.settings.openai_recipe_model,
+            tools=[
+                {
+                    "type": "web_search",
+                    "filters": {"allowed_domains": [hostname]},
+                    "external_web_access": True,
+                }
+            ],
+            tool_choice="required",
+            max_tool_calls=3,
+            include=["web_search_call.action.sources"],
+            input=[
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                "You extract a recipe from one exact public web page. "
+                                "Use web search to retrieve that page, and use only information supported "
+                                "by that exact page. Do not invent or complete missing content. "
+                                "Return is_recipe=false when the exact page is unavailable or is not a recipe. "
+                                "Normalize ingredient names to concise lowercase kitchen terms."
+                            ),
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": f"Retrieve and extract the recipe at this exact URL: {source_url}",
+                        }
+                    ],
+                },
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "recipe_extraction",
+                    "schema": schema,
+                    "strict": True,
+                }
+            },
+        )
+        payload = self._parse_recipe_payload(self._response_output_text(response))
+        self._validate_complete_url_payload(payload)
+        source_urls = self._web_search_source_urls(response, hostname=hostname)
+        expected_path = urlsplit(source_url).path.rstrip("/") or "/"
+        if not any((urlsplit(url).path.rstrip("/") or "/") == expected_path for url in source_urls):
+            raise ValueError("Web search could not retrieve the exact recipe page.")
+        return payload, source_urls
+
+    def _validate_complete_url_payload(self, payload: RecipeExtractionPayload) -> None:
+        if not payload.is_recipe:
+            raise ValueError("The page was not recognised as a recipe.")
+        if not payload.title.strip():
+            raise ValueError("The recipe title could not be extracted.")
+        if not any(ingredient.raw.strip() for ingredient in payload.ingredients):
+            raise ValueError("No recipe ingredients could be extracted.")
+        if not any(step.strip() for step in payload.method_steps):
+            raise ValueError("No recipe method could be extracted.")
+
     def _extract_recipe_payload(
         self,
         cookbook_title: str,
@@ -561,44 +696,10 @@ class OpenAIRecipeExtractor:
         )
 
     def _parse_deterministic_ingredient(self, raw: str) -> ExtractedIngredient:
-        cleaned = " ".join(raw.split()).strip()
-        lowered = cleaned.casefold()
-        preparation = None
-        base = cleaned
-        if "," in cleaned:
-            base, trailing = cleaned.split(",", 1)
-            preparation = trailing.strip() or None
-
-        quantity_match = LEADING_QUANTITY_RE.match(base)
-        quantity = quantity_match.group(0).strip() if quantity_match else None
-        remainder = base[quantity_match.end() :] if quantity_match else base
-
-        unit_match = LEADING_UNIT_RE.match(remainder)
-        unit = unit_match.group(0).strip() if unit_match else None
-        item = remainder[unit_match.end() :] if unit_match else remainder
-        item = re.sub(r"\s*\([^)]*\)", "", item).strip(" .;:-")
-        item = re.sub(r"^(?:of\s+)", "", item, flags=re.IGNORECASE)
-
-        normalized_name = self._normalize_ingredient_name(item or cleaned)
-        return ExtractedIngredient.model_validate(
-            build_ingredient_payload(
-                raw=cleaned,
-                normalized_name=normalized_name,
-                quantity=quantity,
-                unit=unit,
-                item=item or None,
-                preparation=preparation,
-                optional="optional" in lowered,
-            )
-        )
+        return parse_ingredient_line(raw)
 
     def _normalize_ingredient_name(self, value: str) -> str:
-        normalized = value.casefold()
-        normalized = re.sub(r"\s*\([^)]*\)", " ", normalized)
-        normalized = re.sub(r"\b(?:for|plus)\b.*$", "", normalized).strip()
-        normalized = re.sub(r"^(?:a|an|the)\s+", "", normalized)
-        normalized = normalize_ingredient_text(normalized)
-        return normalized or "ingredient"
+        return normalize_extracted_ingredient_name(value)
 
     def _merge_source_metadata(
         self,
@@ -655,6 +756,33 @@ class OpenAIRecipeExtractor:
                 if part.get("type") in {"output_text", "text"}:
                     combined.append(part.get("text", ""))
         return "".join(combined)
+
+    def _web_search_source_urls(self, response: Any, *, hostname: str) -> list[str]:
+        output = response.model_dump() if hasattr(response, "model_dump") else {}
+        source_urls: list[str] = []
+
+        def collect_urls(value: Any) -> None:
+            if isinstance(value, dict):
+                for key, nested in value.items():
+                    if key == "url" and isinstance(nested, str):
+                        parsed = urlsplit(nested)
+                        source_hostname = (parsed.hostname or "").casefold().rstrip(".")
+                        allowed_hostname = hostname.casefold().rstrip(".")
+                        if parsed.scheme in {"http", "https"} and (
+                            source_hostname == allowed_hostname
+                            or source_hostname.endswith(f".{allowed_hostname}")
+                        ):
+                            source_urls.append(nested)
+                    else:
+                        collect_urls(nested)
+            elif isinstance(value, list):
+                for nested in value:
+                    collect_urls(nested)
+
+        for item in output.get("output", []):
+            if isinstance(item, dict) and item.get("type") == "web_search_call":
+                collect_urls(item.get("action", {}))
+        return list(dict.fromkeys(source_urls))
 
     def _parse_recipe_payload(self, output_text: str) -> RecipeExtractionPayload:
         candidate = output_text.strip()

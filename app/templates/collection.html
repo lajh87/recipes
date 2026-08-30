@@ -44,7 +44,7 @@
     <div class="section-heading">
       <div>
         <h2>Recipes</h2>
-        <p>{% if collection.slug == 'favourites' %}Your starred recipes appear here.{% elif collection.slug == 'want-to-try' %}Recipes you have flagged for future cooking appear here.{% else %}Unprocessed files link to the original PDF. Processed items expand into recipe cards.{% endif %}</p>
+        <p>{% if collection.slug == 'favourites' %}Your starred recipes appear here.{% elif collection.slug == 'want-to-try' %}Recipes you have flagged for future cooking appear here.{% elif collection.slug == 'other' %}Recipes imported from other public websites appear here.{% else %}Imported links and processed source files appear as recipe cards.{% endif %}</p>
       </div>
     </div>
     {% set staged_cookbooks = cookbooks|selectattr('recipe_count', 'equalto', 0)|list %}
@@ -125,7 +125,9 @@
             {% endif %}
             <div class="card-actions">
               <a class="button button--secondary" href="{{ recipe_page_href }}">Open Recipe</a>
-              {% if collection.slug not in ['favourites', 'want-to-try'] %}
+              {% if recipe.source.format == 'url' and source_metadata.get('source_url') %}
+                <a class="button button--secondary" href="{{ source_metadata.get('source_url') }}" target="_blank" rel="noopener noreferrer">Open Source</a>
+              {% elif collection.slug not in ['favourites', 'want-to-try'] %}
                 <a class="button button--secondary" href="{{ url_for('cookbook_file', cookbook_id=recipe.cookbook_id) }}">Original PDF</a>
               {% endif %}
             </div>
@@ -139,9 +141,12 @@
           {% elif collection.slug == 'want-to-try' %}
             <h3>No want to try recipes yet</h3>
             <p>Use the want to try button on a card or recipe page to build this collection.</p>
+          {% elif collection.slug == 'other' %}
+            <h3>No other recipes yet</h3>
+            <p>Use Add Recipe on the library page to import a recipe from any public website.</p>
           {% else %}
-            <h3>No files in this collection yet</h3>
-            <p>Use the upload control above to stage PDF files into this collection.</p>
+            <h3>No recipes in this collection yet</h3>
+            <p>Use Add Recipe on the library page, or the upload control above, to add a source.</p>
           {% endif %}
         </article>
       {% endif %}

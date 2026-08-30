@@ -1,0 +1,65 @@
+<dialog
+  class="recipe-import-dialog"
+  data-recipe-import-dialog
+  data-preview-url="{{ url_for('preview_recipe_import') }}"
+  data-commit-url-template="{{ url_for('commit_recipe_import', import_id='__IMPORT_ID__') }}"
+  aria-labelledby="recipe-import-title"
+>
+  <div class="recipe-import-dialog__shell">
+    <div class="recipe-import-dialog__header">
+      <div>
+        <p class="page-kicker">Recipe Import</p>
+        <h2 id="recipe-import-title">Add a recipe from a link</h2>
+      </div>
+      <button class="recipe-import-dialog__close" type="button" data-recipe-import-close aria-label="Close recipe importer">×</button>
+    </div>
+
+    <form class="recipe-import-dialog__url-step" data-recipe-import-url-form>
+      <label for="recipe-import-url">Recipe URL</label>
+      <div class="recipe-import-dialog__url-row">
+        <input id="recipe-import-url" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com/recipe" required data-recipe-import-url />
+        <button class="button" type="submit" data-recipe-import-extract>Extract Recipe</button>
+      </div>
+      <p class="cookbook-card__meta">Public recipe pages only. The page is reviewed before anything is saved.</p>
+    </form>
+
+    <div class="recipe-import-dialog__progress" data-recipe-import-progress hidden>
+      <span class="recipe-import-dialog__spinner" aria-hidden="true"></span>
+      <p>Reading the page and extracting the recipe…</p>
+    </div>
+
+    <p class="feedback recipe-import-dialog__feedback" data-recipe-import-feedback role="status" aria-live="polite"></p>
+
+    <form class="recipe-import-dialog__preview" data-recipe-import-preview-form hidden>
+      <div class="recipe-import-dialog__source">
+        <div>
+          <span class="recipe-import-dialog__meta-label">Source</span>
+          <a class="text-link" href="#" target="_blank" rel="noopener noreferrer" data-recipe-import-source></a>
+        </div>
+        <div>
+          <span class="recipe-import-dialog__meta-label">Collection</span>
+          <strong data-recipe-import-collection></strong>
+        </div>
+      </div>
+
+      <label>
+        <span>Title</span>
+        <input type="text" maxlength="300" required data-recipe-import-title />
+      </label>
+      <label>
+        <span>Ingredients <small>one per line</small></span>
+        <textarea rows="9" required data-recipe-import-ingredients></textarea>
+      </label>
+      <label>
+        <span>Method <small>one step per line</small></span>
+        <textarea rows="10" required data-recipe-import-method></textarea>
+      </label>
+      <div class="recipe-import-dialog__metadata" data-recipe-import-metadata hidden></div>
+      <div class="card-actions recipe-import-dialog__actions">
+        <button class="button" type="submit" data-recipe-import-save>Save Recipe</button>
+        <button class="button button--secondary" type="button" data-recipe-import-back>Use Another Link</button>
+        <button class="button button--secondary" type="button" data-recipe-import-close>Cancel</button>
+      </div>
+    </form>
+  </div>
+</dialog>

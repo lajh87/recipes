@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 ReviewStatus = Literal["pending_review", "verified", "needs_review", "rejected"]
+CookbookSourceKind = Literal["file", "web"]
 
 
 class CookbookTocEntry(BaseModel):
@@ -21,6 +22,7 @@ class CookbookItem(BaseModel):
     cuisine: str | None = None
     published_at: str | None = None
     collection_slug: str | None = None
+    source_kind: CookbookSourceKind = "file"
     filename: str
     object_key: str
     size_bytes: int
@@ -141,6 +143,16 @@ class RecipeTagsUpdateRequest(BaseModel):
     seasonal_ingredients: list[str] | None = None
     ingredient_classifications: dict[str, str] | None = None
     note: str | None = None
+
+
+class RecipeImportPreviewRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class RecipeImportCommitRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    ingredient_lines: list[str] = Field(min_length=1, max_length=200)
+    method_steps: list[str] = Field(min_length=1, max_length=100)
 
 
 class SearchResultRecord(BaseModel):

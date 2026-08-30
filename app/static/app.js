@@ -226,6 +226,348 @@ function initCookbookToc() {
   updateActiveSection();
 }
 
+function initRecipeUrlImport() {
+  const dialog = document.querySelector("[data-recipe-import-dialog]");
+  if (!(dialog instanceof HTMLElement)) {
+    return;
+  }
+
+  const urlForm = dialog.querySelector("[data-recipe-import-url-form]");
+  const previewForm = dialog.querySelector("[data-recipe-import-preview-form]");
+  const urlInput = dialog.querySelector("[data-recipe-import-url]");
+  const extractButton = dialog.querySelector("[data-recipe-import-extract]");
+  const saveButton = dialog.querySelector("[data-recipe-import-save]");
+  const progress = dialog.querySelector("[data-recipe-import-progress]");
+  const feedback = dialog.querySelector("[data-recipe-import-feedback]");
+  const titleInput = dialog.querySelector("[data-recipe-import-title]");
+  const ingredientsInput = dialog.querySelector("[data-recipe-import-ingredients]");
+  const methodInput = dialog.querySelector("[data-recipe-import-method]");
+  const sourceLink = dialog.querySelector("[data-recipe-import-source]");
+  const collection = dialog.querySelector("[data-recipe-import-collection]");
+  const metadata = dialog.querySelector("[data-recipe-import-metadata]");
+  if (
+    !(urlForm instanceof HTMLFormElement)
+    || !(previewForm instanceof HTMLFormElement)
+    || !(urlInput instanceof HTMLInputElement)
+    || !(titleInput instanceof HTMLInputElement)
+    || !(ingredientsInput instanceof HTMLTextAreaElement)
+    || !(methodInput instanceof HTMLTextAreaElement)
+  ) {
+    return;
+  }
+
+  let activeImportId = "";
+  let resolvedHandler = null;
+
+  function closeDialog() {
+    document.body.classList.remove("is-recipe-import-open", "is-recipe-import-fallback");
+    if (typeof dialog.close === "function" && dialog.hasAttribute("open")) {
+      dialog.close();
+      return;
+    }
+    dialog.removeAttribute("open");
+    dialog.classList.remove("is-fallback-open");
+    dialog.dispatchEvent(new Event("close"));
+  }
+
+  function showDialog() {
+    document.body.classList.add("is-recipe-import-open");
+    if (typeof dialog.showModal === "function") {
+      if (!dialog.hasAttribute("open")) {
+        dialog.showModal();
+      }
+      return;
+    }
+    dialog.setAttribute("open", "");
+    dialog.classList.add("is-fallback-open");
+    document.body.classList.add("is-recipe-import-fallback");
+  }
+
+  function setFeedback(message, state = "") {
+    if (!(feedback instanceof HTMLElement)) {
+      return;
+    }
+    feedback.textContent = message;
+    feedback.dataset.state = state;
+  }
+
+  function setBusy(isBusy, message = "") {
+    if (progress instanceof HTMLElement) {
+      progress.hidden = !isBusy;
+      const progressMessage = progress.querySelector("p");
+      if (progressMessage instanceof HTMLElement && message) {
+        progressMessage.textContent = message;
+      }
+    }
+    if (extractButton instanceof HTMLButtonElement) {
+      extractButton.disabled = isBusy;
+      extractButton.setAttribute("aria-busy", String(isBusy));
+    }
+    if (saveButton instanceof HTMLButtonElement) {
+      saveButton.disabled = isBusy;
+      saveButton.setAttribute("aria-busy", String(isBusy));
+    }
+  }
+
+  function showUrlStep() {
+    urlForm.hidden = false;
+    previewForm.hidden = true;
+    activeImportId = "";
+    setBusy(false);
+  }
+
+  function resetDialog() {
+    urlForm.reset();
+    previewForm.reset();
+    activeImportId = "";
+    setFeedback("");
+    setBusy(false);
+    showUrlStep();
+    if (metadata instanceof HTMLElement) {
+      metadata.hidden = true;
+      metadata.replaceChildren();
+    }
+  }
+
+  async function responseJson(response) {
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (_error) {
+      payload = {};
+    }
+    if (!response.ok) {
+      throw new Error(payload.detail || `Recipe import failed with status ${response.status}.`);
+    }
+    return payload;
+  }
+
+  function renderMetadata(values) {
+    if (!(metadata instanceof HTMLElement)) {
+      return;
+    }
+    metadata.replaceChildren();
+    const labels = new Map([
+      ["serves", "Serves"],
+      ["makes", "Makes"],
+      ["yield", "Yield"],
+      ["prep_time", "Prep"],
+      ["cook_time", "Cook"],
+      ["total_time", "Total"],
+    ]);
+    for (const [key, label] of labels) {
+      const value = values?.[key];
+      if (typeof value !== "string" || !value.trim()) {
+        continue;
+      }
+      const item = document.createElement("span");
+      item.className = "pill";
+      item.textContent = `${label}: ${value.trim()}`;
+      metadata.appendChild(item);
+    }
+    const textBlocks = [
+      ["Introduction", values?.intro],
+      [
+        "Preparation notes",
+        Array.isArray(values?.preparation_notes) ? values.preparation_notes.join(" ") : "",
+      ],
+    ];
+    for (const [label, value] of textBlocks) {
+      if (typeof value !== "string" || !value.trim()) {
+        continue;
+      }
+      const block = document.createElement("div");
+      block.className = "recipe-import-dialog__metadata-block";
+      const heading = document.createElement("strong");
+      heading.textContent = label;
+      const copy = document.createElement("p");
+      copy.textContent = value.trim();
+      block.append(heading, copy);
+      metadata.appendChild(block);
+    }
+    const webSearchSources = Array.isArray(values?.web_search_sources)
+      ? values.web_search_sources.filter((value) => typeof value === "string" && value.trim())
+      : [];
+    if (webSearchSources.length > 0) {
+      const block = document.createElement("div");
+      block.className = "recipe-import-dialog__metadata-block";
+      const heading = document.createElement("strong");
+      heading.textContent = "Retrieved source";
+      const sourceList = document.createElement("div");
+      sourceList.className = "recipe-import-dialog__source-links";
+      for (const sourceUrl of webSearchSources) {
+        const link = document.createElement("a");
+        link.className = "text-link";
+        link.href = sourceUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        try {
+          const parsed = new URL(sourceUrl);
+          link.textContent = `${parsed.hostname}${parsed.pathname}`;
+        } catch (_error) {
+          link.textContent = sourceUrl;
+        }
+        sourceList.appendChild(link);
+      }
+      block.append(heading, sourceList);
+      metadata.appendChild(block);
+    }
+    metadata.hidden = metadata.childElementCount === 0;
+  }
+
+  function renderPreview(payload) {
+    activeImportId = String(payload.import_id || "");
+    titleInput.value = String(payload.title || "");
+    ingredientsInput.value = Array.isArray(payload.ingredient_lines) ? payload.ingredient_lines.join("\n") : "";
+    methodInput.value = Array.isArray(payload.method_steps) ? payload.method_steps.join("\n") : "";
+    if (sourceLink instanceof HTMLAnchorElement) {
+      sourceLink.href = String(payload.source_url || "#");
+      sourceLink.textContent = String(payload.site_name || payload.source_url || "Recipe source");
+    }
+    if (collection instanceof HTMLElement) {
+      collection.textContent = String(payload.collection_title || "Other");
+    }
+    renderMetadata(payload.metadata || {});
+    urlForm.hidden = true;
+    previewForm.hidden = false;
+    setBusy(false);
+    setFeedback("Review the extracted recipe before saving.", "ready");
+    titleInput.focus();
+  }
+
+  function finish(payload) {
+    const handler = resolvedHandler;
+    resolvedHandler = null;
+    closeDialog();
+    if (typeof handler === "function") {
+      handler(payload);
+      return;
+    }
+    if (payload.recipe_url) {
+      window.location.assign(payload.recipe_url);
+    }
+  }
+
+  async function previewUrl(value) {
+    const url = value.trim();
+    if (!url) {
+      setFeedback("Enter a recipe URL.", "error");
+      return;
+    }
+    setFeedback("");
+    setBusy(true, "Reading the page and extracting the recipe…");
+    try {
+      const response = await fetch(dialog.dataset.previewUrl || "", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url }),
+      });
+      const payload = await responseJson(response);
+      if (payload.status === "existing") {
+        finish(payload);
+        return;
+      }
+      renderPreview(payload);
+    } catch (error) {
+      console.error(error);
+      setBusy(false);
+      showUrlStep();
+      setFeedback(error instanceof Error ? error.message : "The recipe could not be extracted.", "error");
+      urlInput.focus();
+    }
+  }
+
+  async function savePreview() {
+    const ingredientLines = ingredientsInput.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const methodSteps = methodInput.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!titleInput.value.trim() || ingredientLines.length === 0 || methodSteps.length === 0) {
+      setFeedback("Title, ingredients, and method steps are all required.", "error");
+      return;
+    }
+    const commitUrl = (dialog.dataset.commitUrlTemplate || "").replace(
+      "__IMPORT_ID__",
+      encodeURIComponent(activeImportId),
+    );
+    setFeedback("");
+    setBusy(true, "Saving the recipe…");
+    try {
+      const response = await fetch(commitUrl, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: titleInput.value.trim(),
+          ingredient_lines: ingredientLines,
+          method_steps: methodSteps,
+        }),
+      });
+      const payload = await responseJson(response);
+      finish(payload);
+    } catch (error) {
+      console.error(error);
+      setBusy(false);
+      setFeedback(error instanceof Error ? error.message : "The recipe could not be saved.", "error");
+    }
+  }
+
+  function openImporter({ url = "", onResolved = null } = {}) {
+    resetDialog();
+    resolvedHandler = onResolved;
+    showDialog();
+    if (url) {
+      urlInput.value = url;
+      void previewUrl(url);
+    } else {
+      urlInput.focus();
+    }
+  }
+
+  urlForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void previewUrl(urlInput.value);
+  });
+  previewForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void savePreview();
+  });
+  dialog.addEventListener("click", (event) => {
+    const closeButton = event.target.closest("[data-recipe-import-close]");
+    if (closeButton instanceof HTMLElement) {
+      resolvedHandler = null;
+      closeDialog();
+      return;
+    }
+    const backButton = event.target.closest("[data-recipe-import-back]");
+    if (backButton instanceof HTMLElement) {
+      setFeedback("");
+      showUrlStep();
+      urlInput.focus();
+    }
+  });
+  dialog.addEventListener("close", () => {
+    document.body.classList.remove("is-recipe-import-open", "is-recipe-import-fallback");
+    dialog.classList.remove("is-fallback-open");
+    resolvedHandler = null;
+    resetDialog();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && dialog.classList.contains("is-fallback-open")) {
+      resolvedHandler = null;
+      closeDialog();
+    }
+  });
+  for (const button of document.querySelectorAll("[data-open-recipe-import]")) {
+    button.addEventListener("click", () => openImporter());
+  }
+
+  window.recipeUrlImporter = { open: openImporter };
+}
+
 function normalizeMealPlanText(value) {
   const aliases = new Map([
     ["dahl", "daal"],
@@ -533,6 +875,33 @@ function initMealPlanAutoLink() {
     rowElements.recipeIdInput.value = "";
     itemInput.dataset.recipeLinked = "false";
     renderMealPlanRowAction(rowElements.actionContent, null);
+  }
+
+  function linkImportedRecipe(itemInput, payload) {
+    const rowElements = mealPlanRowElements(itemInput);
+    if (!rowElements || !payload?.recipe_id || !payload?.title) {
+      return;
+    }
+    let option = findMealPlanRecipeOptionById(String(payload.recipe_id), recipeOptions);
+    if (!option) {
+      const title = String(payload.title).trim();
+      const cookbookTitle = String(payload.cookbook_title || payload.collection_title || "Web recipe").trim();
+      option = {
+        id: String(payload.recipe_id),
+        label: `${title} - ${cookbookTitle} [${payload.recipe_id}]`,
+        title,
+        normalizedTitle: normalizeMealPlanText(title),
+        tokens: new Set(tokenizeMealPlanValue(title)),
+      };
+      recipeOptions.push(option);
+    }
+    setMealPlanRecipeSelection(itemInput, rowElements, option);
+    renderMealPlanRecipeSuggestions([{ label: option.label }]);
+    updateSaveStatus(
+      payload.status === "existing" ? "Existing recipe linked. Saving…" : "Recipe imported. Saving…",
+      "saving",
+    );
+    queueMealPlanSave(0);
   }
 
   function syncMealPlanItemInput(itemInput) {
@@ -844,6 +1213,31 @@ function initMealPlanAutoLink() {
     if (autosaveController) {
       autosaveController.abort();
     }
+  });
+
+  mealPlanForm.addEventListener("paste", (event) => {
+    const itemInput = event.target.closest("[data-meal-plan-item]");
+    if (!(itemInput instanceof HTMLInputElement) || !window.recipeUrlImporter) {
+      return;
+    }
+    const pastedValue = event.clipboardData?.getData("text/plain")?.trim() || "";
+    if (!/^https?:\/\/\S+$/i.test(pastedValue)) {
+      return;
+    }
+    try {
+      const parsed = new URL(pastedValue);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return;
+      }
+    } catch (_error) {
+      return;
+    }
+
+    event.preventDefault();
+    window.recipeUrlImporter.open({
+      url: pastedValue,
+      onResolved: (payload) => linkImportedRecipe(itemInput, payload),
+    });
   });
 
   mealPlanForm.addEventListener("input", (event) => {
@@ -2644,8 +3038,17 @@ function initRecipeTagEditor() {
   }
 }
 
-initRecipeToggles();
-initCookbookToc();
-initMealPlanAutoLink();
-initIngredientNetworkD3();
-initRecipeTagEditor();
+function initApplication() {
+  initRecipeToggles();
+  initCookbookToc();
+  initRecipeUrlImport();
+  initMealPlanAutoLink();
+  initIngredientNetworkD3();
+  initRecipeTagEditor();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initApplication, { once: true });
+} else {
+  initApplication();
+}

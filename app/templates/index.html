@@ -21,6 +21,9 @@
           <span>recipes tracked</span>
         </div>
       </div>
+      <div class="hero__actions">
+        <button class="button" type="button" data-open-recipe-import>Add Recipe</button>
+      </div>
     </div>
     <div class="hero--family__art" aria-label="Family cookbook artwork">
       <figure class="hero-art-card hero-art-card--cottage">
@@ -138,4 +141,5 @@
       {% endif %}
     </div>
   </section>
+  {% include "_recipe_url_import_dialog.html" %}
 {% endblock %}

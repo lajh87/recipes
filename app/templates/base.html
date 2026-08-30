@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260830-recipe-import-2" />
   </head>
   <body>
     <main class="page-shell">
@@ -36,6 +36,6 @@
       </div>
     </div>
     {% block page_scripts %}{% endblock %}
-    <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+    <script src="{{ url_for('static', path='/app.js') }}?v=20260830-recipe-import-2" defer></script>
   </body>
 </html>

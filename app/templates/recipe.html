@@ -203,8 +203,15 @@
       </div>
       <section class="source-block">
         <h4>Source Traceability</h4>
-        <p>Open the original extracted section as plain text when you need to inspect the source directly.</p>
+        {% if recipe.source.format == 'url' and source_metadata.get('source_url') %}
+          <p>This recipe was imported from a public webpage.</p>
+        {% else %}
+          <p>Open the original extracted section as plain text when you need to inspect the source directly.</p>
+        {% endif %}
         <div class="card-actions">
+          {% if recipe.source.format == 'url' and source_metadata.get('source_url') %}
+            <a class="button button--secondary" href="{{ source_metadata.get('source_url') }}" target="_blank" rel="noopener noreferrer">Open Source</a>
+          {% endif %}
           <a class="button button--secondary" href="{{ url_for('recipe_raw_text_page', recipe_id=recipe.id) }}">View Raw Text</a>
         </div>
       </section>

@@ -23,6 +23,11 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(str(app.url_path_for("meal_plan_page")), "/meal-plan")
         self.assertEqual(str(app.url_path_for("library_page")), "/library")
         self.assertEqual(str(app.url_path_for("manage_recipe_tags_page")), "/library/tags")
+        self.assertEqual(str(app.url_path_for("preview_recipe_import")), "/api/recipe-imports/preview")
+        self.assertEqual(
+            str(app.url_path_for("commit_recipe_import", import_id="draft-1")),
+            "/api/recipe-imports/draft-1/commit",
+        )
 
     def test_forwarded_prefix_is_normalized_for_proxy_mounts(self) -> None:
         self.assertEqual(normalize_forwarded_prefix(None), "")
@@ -42,6 +47,19 @@ class NavigationTests(unittest.TestCase):
         self.assertIn(library_link, base_template)
         self.assertNotIn(tags_link, base_template)
         self.assertLess(base_template.index(meal_plan_link), base_template.index(library_link))
+
+    def test_shared_url_importer_is_available_from_library_and_meal_plan(self) -> None:
+        base_dir = Path(__file__).resolve().parent.parent
+        index_template = (base_dir / "app" / "templates" / "index.html").read_text(encoding="utf-8")
+        meal_plan_template = (base_dir / "app" / "templates" / "meal_plan.html").read_text(encoding="utf-8")
+        importer_template = (base_dir / "app" / "templates" / "_recipe_url_import_dialog.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("data-open-recipe-import", index_template)
+        self.assertIn('{% include "_recipe_url_import_dialog.html" %}', index_template)
+        self.assertIn('{% include "_recipe_url_import_dialog.html" %}', meal_plan_template)
+        self.assertIn("data-recipe-import-dialog", importer_template)
 
     def test_manage_metadata_links_to_recipe_tags(self) -> None:
         metadata_template = (

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import mimetypes
 import os
 import re
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -44,7 +46,7 @@ from app.models import (
 logger = logging.getLogger(__name__)
 
 FILENAME_SANITIZER = re.compile(r"[^A-Za-z0-9._-]+")
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 RECIPE_COLLECTIONS = (
     {
         "slug": "favourites",
@@ -81,6 +83,12 @@ RECIPE_COLLECTIONS = (
         "title": "Waitrose Recipes",
         "description": "Stage and manage recipe source files for Waitrose Recipes.",
         "allow_upload": True,
+    },
+    {
+        "slug": "other",
+        "title": "Other",
+        "description": "Recipes imported from websites without a dedicated publisher collection.",
+        "allow_upload": False,
     },
 )
 
@@ -228,6 +236,7 @@ class LibraryRepository:
                 "cuisine": metadata.get("cuisine", ""),
                 "published_at": metadata.get("published_at", ""),
                 "collection_slug": collection_slug or "",
+                "source_kind": "file",
                 "filename": filename,
                 "object_key": object_key,
                 "size_bytes": str(size_bytes),
@@ -387,7 +396,7 @@ class LibraryRepository:
 
         self._delete_existing_recipes(cookbook_id)
 
-        object_keys = [cookbook.object_key]
+        object_keys = [cookbook.object_key] if cookbook.object_key else []
         if cookbook.cover_image_key:
             object_keys.append(cookbook.cover_image_key)
 
@@ -397,23 +406,24 @@ class LibraryRepository:
             except Exception:
                 logger.warning("Could not remove object %s for cookbook %s.", object_key, cookbook_id)
 
-        derived_prefix = f"{self.settings.derived_prefix}/{cookbook_id}/"
-        try:
-            for obj in self.minio.list_objects(
-                self.settings.minio_bucket_name,
-                prefix=derived_prefix,
-                recursive=True,
-            ):
-                try:
-                    self.minio.remove_object(self.settings.minio_bucket_name, obj.object_name)
-                except Exception:
-                    logger.warning(
-                        "Could not remove derived object %s for cookbook %s.",
-                        obj.object_name,
-                        cookbook_id,
-                    )
-        except Exception:
-            logger.warning("Could not enumerate derived objects for cookbook %s.", cookbook_id)
+        if cookbook.source_kind == "file":
+            derived_prefix = f"{self.settings.derived_prefix}/{cookbook_id}/"
+            try:
+                for obj in self.minio.list_objects(
+                    self.settings.minio_bucket_name,
+                    prefix=derived_prefix,
+                    recursive=True,
+                ):
+                    try:
+                        self.minio.remove_object(self.settings.minio_bucket_name, obj.object_name)
+                    except Exception:
+                        logger.warning(
+                            "Could not remove derived object %s for cookbook %s.",
+                            obj.object_name,
+                            cookbook_id,
+                        )
+            except Exception:
+                logger.warning("Could not enumerate derived objects for cookbook %s.", cookbook_id)
 
         self.redis.delete(self.settings.cookbook_key(cookbook_id))
         self.redis.delete(self.settings.cookbook_recipe_index_key(cookbook_id))
@@ -472,6 +482,8 @@ class LibraryRepository:
         cookbook = self._hydrate_cookbook(data) if data else None
         if not cookbook:
             raise ValueError(f"Cookbook '{cookbook_id}' not found.")
+        if cookbook.source_kind == "web" or not cookbook.object_key:
+            raise ValueError(f"Cookbook '{cookbook_id}' is a web source without a stored file.")
         response = self.minio.get_object(self.settings.minio_bucket_name, cookbook.object_key)
         try:
             return response.read()
@@ -594,7 +606,7 @@ class LibraryRepository:
             if index < len(embeddings):
                 filtered_embeddings.append(embeddings[index])
 
-        self._persist_extracted_recipes(
+        persisted = self._persist_extracted_recipes(
             cookbook,
             filtered_drafts,
             filtered_embeddings,
@@ -604,7 +616,139 @@ class LibraryRepository:
             ),
             table_of_contents=table_of_contents,
         )
-        return len(filtered_drafts)
+        return len(persisted)
+
+    def get_recipe_for_source_url(self, normalized_url: str) -> RecipeRecord | None:
+        recipe_id = self.redis.get(self.settings.recipe_source_url_key(normalized_url))
+        if not recipe_id:
+            return None
+        recipe = self.get_recipe(recipe_id)
+        if recipe:
+            return recipe
+        self.redis.delete(self.settings.recipe_source_url_key(normalized_url))
+        return None
+
+    def save_recipe_import_preview(self, import_id: str, payload: str, *, ttl_seconds: int) -> None:
+        self.redis.set(
+            self.settings.recipe_import_preview_key(import_id),
+            payload,
+            ex=ttl_seconds,
+        )
+
+    def load_recipe_import_preview(self, import_id: str) -> str | None:
+        payload = self.redis.get(self.settings.recipe_import_preview_key(import_id))
+        return payload or None
+
+    def delete_recipe_import_preview(self, import_id: str) -> None:
+        self.redis.delete(self.settings.recipe_import_preview_key(import_id))
+
+    def ensure_web_source(
+        self,
+        *,
+        hostname: str,
+        site_name: str,
+        collection_slug: str,
+    ) -> CookbookItem:
+        digest = hashlib.sha256(hostname.casefold().encode("utf-8")).hexdigest()[:24]
+        cookbook_id = f"web-{digest}"
+        existing = self.get_cookbook(cookbook_id)
+        if existing:
+            return existing
+
+        created_at = datetime.now(UTC).isoformat()
+        title = self._clean_metadata_text(site_name) or hostname.removeprefix("www.")
+        self.redis.hset(
+            self.settings.cookbook_key(cookbook_id),
+            mapping={
+                "id": cookbook_id,
+                "title": title,
+                "author": "",
+                "cuisine": "",
+                "published_at": "",
+                "collection_slug": collection_slug,
+                "source_kind": "web",
+                "filename": hostname,
+                "object_key": "",
+                "size_bytes": "0",
+                "content_type": "text/html",
+                "uploaded_at": created_at,
+                "status": "extracted",
+                "recipe_count": "0",
+                "needs_review_count": "0",
+                "extract_attempted_at": created_at,
+                "extract_completed_at": created_at,
+                "extract_error": "",
+                "cover_image_key": "",
+                "cover_image_content_type": "",
+                "cover_extract_attempted_at": created_at,
+                "metadata_extract_attempted_at": created_at,
+                "table_of_contents": "[]",
+            },
+        )
+        self.redis.zadd(self.settings.cookbook_index_key, {cookbook_id: datetime.now(UTC).timestamp()})
+        cookbook = self.get_cookbook(cookbook_id)
+        if not cookbook:
+            raise ValueError("Could not create the web recipe source.")
+        return cookbook
+
+    def store_url_recipe(
+        self,
+        *,
+        hostname: str,
+        site_name: str,
+        collection_slug: str,
+        normalized_url: str,
+        draft: RecipeDraft,
+        embedding: list[float] | None,
+    ) -> RecipeRecord:
+        existing = self.get_recipe_for_source_url(normalized_url)
+        if existing:
+            return existing
+
+        lock_key = self.settings.recipe_source_url_lock_key(normalized_url)
+        lock_token = str(uuid4())
+        acquired = self.redis.set(lock_key, lock_token, nx=True, ex=60)
+        if not acquired:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                existing = self.get_recipe_for_source_url(normalized_url)
+                if existing:
+                    return existing
+                if not self.redis.get(lock_key):
+                    acquired = self.redis.set(lock_key, lock_token, nx=True, ex=60)
+                    if acquired:
+                        break
+                time.sleep(0.05)
+            if not acquired:
+                raise ValueError("This recipe URL is already being imported. Try again in a moment.")
+
+        try:
+            existing = self.get_recipe_for_source_url(normalized_url)
+            if existing:
+                return existing
+            cookbook = self.ensure_web_source(
+                hostname=hostname,
+                site_name=site_name,
+                collection_slug=collection_slug,
+            )
+            existing_recipes = self.list_recipes(cookbook_id=cookbook.id)
+            persisted = self._persist_extracted_recipes(
+                cookbook,
+                [draft],
+                [embedding] if embedding else [],
+                existing_recipe_count=len(existing_recipes),
+                existing_needs_review_count=sum(
+                    1 for recipe in existing_recipes if recipe.review.status == "needs_review"
+                ),
+            )
+            if not persisted:
+                raise ValueError("The imported recipe could not be saved.")
+            recipe = persisted[0]
+            self.redis.set(self.settings.recipe_source_url_key(normalized_url), recipe.id)
+            return recipe
+        finally:
+            if self.redis.get(lock_key) == lock_token:
+                self.redis.delete(lock_key)
 
     def _all_recipe_ids(self) -> list[str]:
         recipe_ids: list[str] = []
@@ -633,9 +777,10 @@ class LibraryRepository:
         existing_recipe_count: int,
         existing_needs_review_count: int,
         table_of_contents: list[CookbookTocEntry] | None = None,
-    ) -> None:
+    ) -> list[RecipeRecord]:
         needs_review_count = existing_needs_review_count
         points: list[qdrant_models.PointStruct] = []
+        persisted: list[RecipeRecord] = []
         for index, draft in enumerate(drafts, start=existing_recipe_count + 1):
             recipe_id = str(uuid4())
             images = self._store_recipe_images(cookbook.id, recipe_id, draft.images)
@@ -675,6 +820,7 @@ class LibraryRepository:
             self.redis.zadd(self.settings.cookbook_recipe_index_key(cookbook.id), {recipe_id: index})
             for ingredient_name in recipe.ingredient_names:
                 self.redis.sadd(self.settings.ingredient_key(ingredient_name), recipe_id)
+            persisted.append(recipe)
 
             embedding_index = index - existing_recipe_count - 1
             if embedding_index < len(embeddings):
@@ -696,10 +842,13 @@ class LibraryRepository:
                 )
 
         if points:
-            self.qdrant.upsert(
-                collection_name=self.settings.qdrant_recipe_collection,
-                points=points,
-            )
+            try:
+                self.qdrant.upsert(
+                    collection_name=self.settings.qdrant_recipe_collection,
+                    points=points,
+                )
+            except Exception:
+                logger.warning("Could not index %s recipe embeddings in Qdrant.", len(points), exc_info=True)
 
         completed_at = datetime.now(UTC).isoformat()
         cookbook_mapping = {
@@ -715,6 +864,7 @@ class LibraryRepository:
             self.settings.cookbook_key(cookbook.id),
             mapping=cookbook_mapping,
         )
+        return persisted
 
     def list_recipes(
         self,
@@ -1132,6 +1282,13 @@ class LibraryRepository:
             if recipe:
                 for ingredient_name in recipe.ingredient_names:
                     self.redis.srem(self.settings.ingredient_key(ingredient_name), recipe_id)
+                source_url = str(
+                    recipe.source.metadata.get("canonical_url")
+                    or recipe.source.metadata.get("source_url")
+                    or ""
+                ).strip()
+                if source_url:
+                    self.redis.delete(self.settings.recipe_source_url_key(source_url))
             self.redis.delete(self.settings.recipe_key(recipe_id))
             self.redis.delete(self.settings.recipe_reference_key(recipe_id))
             self.redis.zrem(self.settings.favorite_recipe_index_key, recipe_id)
@@ -1211,6 +1368,7 @@ class LibraryRepository:
                     cuisine=None,
                     published_at=None,
                     collection_slug=None,
+                    source_kind="file",
                     filename=filename,
                     object_key=obj.object_name,
                     size_bytes=obj.size or 0,
@@ -1251,6 +1409,7 @@ class LibraryRepository:
             cuisine=data.get("cuisine") or None,
             published_at=data.get("published_at") or None,
             collection_slug=data.get("collection_slug") or None,
+            source_kind=data.get("source_kind", "file") or "file",
             filename=data["filename"],
             object_key=data["object_key"],
             size_bytes=int(data["size_bytes"]),

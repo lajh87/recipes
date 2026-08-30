@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 from collections import defaultdict, deque
 import logging
@@ -45,6 +46,8 @@ from app.meal_plan import (
 from app.models import (
     CookbookMetadataUpdateRequest,
     CookbookTocEntry,
+    RecipeImportCommitRequest,
+    RecipeImportPreviewRequest,
     RecipeRecord,
     RecipeTagsUpdateRequest,
     ReviewStatus,
@@ -60,6 +63,7 @@ from app.seasonality import (
     recipe_is_in_season,
 )
 from app.waitrose_pdf import extract_waitrose_pdf
+from app.url_recipe_import import UrlRecipeImporter, UrlRecipeImportError
 
 logger = logging.getLogger(__name__)
 
@@ -1780,6 +1784,8 @@ async def cookbook_file(cookbook_id: str, request: Request) -> StreamingResponse
     cookbook = repository.get_cookbook(cookbook_id)
     if not cookbook:
         raise HTTPException(status_code=404, detail="Cookbook not found.")
+    if cookbook.source_kind == "web":
+        raise HTTPException(status_code=404, detail="Web recipe sources do not have a stored file.")
 
     file_bytes = repository.download_cookbook(cookbook_id)
     headers = {
@@ -2127,6 +2133,80 @@ async def healthz() -> dict[str, str]:
 async def health(request: Request) -> dict:
     repository = get_repository(request)
     return repository.health_report()
+
+
+def recipe_import_response_urls(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    recipe_id = str(payload.get("recipe_id", "")).strip()
+    collection_slug = str(payload.get("collection_slug", "")).strip()
+    if recipe_id:
+        payload["recipe_url"] = str(request.url_for("recipe_page", recipe_id=recipe_id))
+        if collection_slug:
+            payload["recipe_url"] += f"?collection={quote(collection_slug)}"
+    if collection_slug:
+        payload["collection_url"] = str(
+            request.url_for("collection_page", collection_slug=collection_slug)
+        )
+    return payload
+
+
+@app.post("/api/recipe-imports/preview")
+async def preview_recipe_import(
+    payload: RecipeImportPreviewRequest,
+    request: Request,
+) -> JSONResponse:
+    repository = get_repository(request)
+    importer = UrlRecipeImporter(get_app_settings(request))
+    try:
+        result = await asyncio.to_thread(importer.preview, repository, payload.url)
+    except UrlRecipeImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": str(exc), "code": exc.code},
+        )
+    except Exception:
+        logger.exception("Recipe URL preview failed unexpectedly.")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "The recipe import service is unavailable right now.",
+                "code": "recipe_import_unavailable",
+            },
+        )
+    return JSONResponse(recipe_import_response_urls(result, request))
+
+
+@app.post("/api/recipe-imports/{import_id}/commit")
+async def commit_recipe_import(
+    import_id: str,
+    payload: RecipeImportCommitRequest,
+    request: Request,
+) -> JSONResponse:
+    repository = get_repository(request)
+    importer = UrlRecipeImporter(get_app_settings(request))
+    try:
+        result = await asyncio.to_thread(
+            importer.commit,
+            repository,
+            import_id,
+            title=payload.title,
+            ingredient_lines=payload.ingredient_lines,
+            method_steps=payload.method_steps,
+        )
+    except UrlRecipeImportError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": str(exc), "code": exc.code},
+        )
+    except Exception:
+        logger.exception("Recipe URL commit failed unexpectedly.")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "The recipe could not be saved right now.",
+                "code": "recipe_import_unavailable",
+            },
+        )
+    return JSONResponse(recipe_import_response_urls(result, request))
 
 
 @app.get("/api/cookbooks")

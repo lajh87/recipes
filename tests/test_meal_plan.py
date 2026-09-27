@@ -103,16 +103,20 @@ class MealPlanTests(unittest.TestCase):
         self.assertEqual(document.weeks[2].entries[0].recipe_id, "recipe-3")
         self.assertEqual(document.weeks[0].start_on, normalize_week_start_value("11 apr"))
 
-    def test_resolve_recipe_reference_accepts_datalist_value(self) -> None:
+    def test_recipe_option_hides_id_and_legacy_reference_still_resolves(self) -> None:
         recipes = [build_recipe("recipe-1", "Fish Tacos with Mango Lime", "Simple")]
         recipe_map = {recipe.id: recipe for recipe in recipes}
 
+        self.assertEqual(recipe_option_value(recipes[0]), "Fish Tacos with Mango Lime - Simple")
+        new_recipe = resolve_recipe_reference(recipe_option_value(recipes[0]), recipe_map, recipes)
         recipe = resolve_recipe_reference(
-            recipe_option_value(recipes[0]),
+            "Fish Tacos with Mango Lime - Simple [recipe-1]",
             recipe_map,
             recipes,
         )
 
+        self.assertIsNotNone(new_recipe)
+        self.assertEqual(new_recipe.id, "recipe-1")
         self.assertIsNotNone(recipe)
         self.assertEqual(recipe.id, "recipe-1")
 

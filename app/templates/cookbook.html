@@ -25,6 +25,11 @@
       <div class="page-hero__meta">
         <span>{{ cookbook.recipe_count }} recipes</span>
       </div>
+      {% if cookbook.filename == 'Ottolenghi Simple Too.pdf' %}
+        <div class="card-actions">
+          <a class="button button--secondary" href="{{ url_for('cookbook_file', cookbook_id=cookbook.id) }}" target="_blank" rel="noopener noreferrer">Open Source PDF</a>
+        </div>
+      {% endif %}
     </div>
   </section>
 

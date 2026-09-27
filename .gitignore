@@ -23,3 +23,8 @@ scripts/recipes_backup.env
 
 # Local generated planner state
 data-raw/meal-plan.json
+
+# Generated source-book artifacts
+output/
+tmp/
+uploads/

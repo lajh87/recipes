@@ -498,6 +498,7 @@ class LibraryRepository:
         embeddings: list[list[float]],
         *,
         table_of_contents: list[CookbookTocEntry] | None = None,
+        recipe_ids: list[str | None] | None = None,
     ) -> None:
         cookbook = self.get_cookbook(cookbook_id)
         if not cookbook:
@@ -511,6 +512,7 @@ class LibraryRepository:
             existing_recipe_count=0,
             existing_needs_review_count=0,
             table_of_contents=table_of_contents,
+            recipe_ids=recipe_ids,
         )
 
     def backfill_canonical_ingredients(self) -> dict[str, int]:
@@ -777,12 +779,16 @@ class LibraryRepository:
         existing_recipe_count: int,
         existing_needs_review_count: int,
         table_of_contents: list[CookbookTocEntry] | None = None,
+        recipe_ids: list[str | None] | None = None,
     ) -> list[RecipeRecord]:
+        if recipe_ids is not None and len(recipe_ids) != len(drafts):
+            raise ValueError("recipe_ids must match the number of drafts.")
         needs_review_count = existing_needs_review_count
         points: list[qdrant_models.PointStruct] = []
         persisted: list[RecipeRecord] = []
         for index, draft in enumerate(drafts, start=existing_recipe_count + 1):
-            recipe_id = str(uuid4())
+            draft_index = index - existing_recipe_count - 1
+            recipe_id = (recipe_ids[draft_index] if recipe_ids is not None else None) or str(uuid4())
             images = self._store_recipe_images(cookbook.id, recipe_id, draft.images)
             recipe = RecipeRecord(
                 id=recipe_id,

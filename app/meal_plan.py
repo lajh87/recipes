@@ -504,7 +504,11 @@ def parse_meal_plan_form(
             if recipe:
                 entry.recipe_id = recipe.id
                 entry.recipe = recipe
-                if not entry.title or entry.title == recipe_option_value(recipe):
+                if (
+                    not entry.title
+                    or entry.title == recipe_option_value(recipe)
+                    or entry.title == f"{recipe_option_value(recipe)} [{recipe.id}]"
+                ):
                     entry.title = recipe.title
             week.entries.append(entry)
 
@@ -558,7 +562,7 @@ def resolve_recipe_reference(
 
 
 def recipe_option_value(recipe: MealPlanRecipe) -> str:
-    return f"{recipe.title} - {recipe.cookbook_title} [{recipe.id}]"
+    return f"{recipe.title} - {recipe.cookbook_title}"
 
 
 def hydrate_linked_recipes(document: MealPlanDocument, recipes: list[MealPlanRecipe]) -> None:

@@ -1,0 +1,815 @@
+{
+  "source": "https://www.cookcook.app/en/books/9781529109511",
+  "recipes": [
+    {
+      "title": "Menemen",
+      "book_page": 16,
+      "chapter": "Breakfast and brunch",
+      "filename": "Menemen - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Coconut greens with scotch bonnet and eggs",
+      "book_page": 17,
+      "chapter": "Breakfast and brunch",
+      "filename": "Coconut greens with scotch bonnet and eggs - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Butter beans with urfa chilli butter",
+      "book_page": 18,
+      "chapter": "Breakfast and brunch",
+      "filename": "Butter beans with urfa chilli butter - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Cheesy egg polenta bake",
+      "book_page": 20,
+      "chapter": "Breakfast and brunch",
+      "filename": "Cheesy egg polenta bake - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Kat’s feta frittata",
+      "book_page": 21,
+      "chapter": "Breakfast and brunch",
+      "filename": "Kat’s feta frittata - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Baked za’atar tomatoes and mascarpone",
+      "book_page": 24,
+      "chapter": "Breakfast and brunch",
+      "filename": "Baked za’atar tomatoes and mascarpone - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Herby soda bread with za’atar",
+      "book_page": 27,
+      "chapter": "Breakfast and brunch",
+      "filename": "Herby soda bread with za’atar - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Breakfast potatoes",
+      "book_page": 28,
+      "chapter": "Breakfast and brunch",
+      "filename": "Breakfast potatoes - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Everyday granola",
+      "book_page": 30,
+      "chapter": "Breakfast and brunch",
+      "filename": "Everyday granola - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Weekend pancakes with date butter syrup",
+      "book_page": 33,
+      "chapter": "Breakfast and brunch",
+      "filename": "Weekend pancakes with date butter syrup - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Sweet potato fritters",
+      "book_page": 36,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Sweet potato fritters - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Cauliflower and coriander fritters",
+      "book_page": 39,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Cauliflower and coriander fritters - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chaat masala roast potatoes",
+      "book_page": 40,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Chaat masala roast potatoes - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Baked camembert with ’nduja honey",
+      "book_page": 42,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Baked camembert with ’nduja honey - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Cheesy corn dip with padrón pepper salsa",
+      "book_page": 44,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Cheesy corn dip with padrón pepper salsa - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Fried chorizo and kohlrabi",
+      "book_page": 46,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Fried chorizo and kohlrabi - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Dressed-up beans",
+      "book_page": 47,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Dressed-up beans - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Butter bean dip with kalamata oil",
+      "book_page": 50,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Butter bean dip with kalamata oil - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Roasted cauliflower with black and white hummus",
+      "book_page": 51,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Roasted cauliflower with black and white hummus - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Crushed crisp omelette",
+      "book_page": 52,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Crushed crisp omelette - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Egg salad",
+      "book_page": 55,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Egg salad - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Ginger and spring onion aubergines",
+      "book_page": 56,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Ginger and spring onion aubergines - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Herby leek and celeriac soup",
+      "book_page": 58,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Herby leek and celeriac soup - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Persian pea and potato stew",
+      "book_page": 59,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Persian pea and potato stew - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Lentil, fennel and parmesan ‘stoup’",
+      "book_page": 63,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Lentil, fennel and parmesan ‘stoup’ - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Pasta e fagioli",
+      "book_page": 66,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Pasta e fagioli - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Spanish bread soup",
+      "book_page": 67,
+      "chapter": "Snacks, spreads and soups",
+      "filename": "Spanish bread soup - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Angelos’s steak salad with za’atar butter",
+      "book_page": 72,
+      "chapter": "Meat",
+      "filename": "Angelos’s steak salad with za’atar butter - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Traybake chicken caesar salad",
+      "book_page": 73,
+      "chapter": "Meat",
+      "filename": "Traybake chicken caesar salad - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Confit chicken and chickpeas",
+      "book_page": 74,
+      "chapter": "Meat",
+      "filename": "Confit chicken and chickpeas - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Roast chicken and cabbage with soy butter",
+      "book_page": 77,
+      "chapter": "Meat",
+      "filename": "Roast chicken and cabbage with soy butter - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Date and coconut braised lamb and beans",
+      "book_page": 78,
+      "chapter": "Meat",
+      "filename": "Date and coconut braised lamb and beans - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Slow-roasted lamb with grapes",
+      "book_page": 80,
+      "chapter": "Meat",
+      "filename": "Slow-roasted lamb with grapes - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Baked chicken meatballs with pomegranate molasses",
+      "book_page": 82,
+      "chapter": "Meat",
+      "filename": "Baked chicken meatballs with pomegranate molasses - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chicken schnitzels with curried tomatoes",
+      "book_page": 84,
+      "chapter": "Meat",
+      "filename": "Chicken schnitzels with curried tomatoes - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Lamb and aubergine rice pie",
+      "book_page": 87,
+      "chapter": "Meat",
+      "filename": "Lamb and aubergine rice pie - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Lamb kofte in yoghurt sauce",
+      "book_page": 88,
+      "chapter": "Meat",
+      "filename": "Lamb kofte in yoghurt sauce - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chicken meatballs with pistachios and spinach",
+      "book_page": 90,
+      "chapter": "Meat",
+      "filename": "Chicken meatballs with pistachios and spinach - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Sweet spiced sausage and chickpeas",
+      "book_page": 92,
+      "chapter": "Meat",
+      "filename": "Sweet spiced sausage and chickpeas - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Baked chicken thighs with yoghurt and za’atar",
+      "book_page": 95,
+      "chapter": "Meat",
+      "filename": "Baked chicken thighs with yoghurt and za’atar - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Stuffed peppers with lamb and rice",
+      "book_page": 96,
+      "chapter": "Meat",
+      "filename": "Stuffed peppers with lamb and rice - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Sticky orange and harissa pork belly",
+      "book_page": 98,
+      "chapter": "Meat",
+      "filename": "Sticky orange and harissa pork belly - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chicken bisteeya",
+      "book_page": 100,
+      "chapter": "Meat",
+      "filename": "Chicken bisteeya - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Black lime salmon",
+      "book_page": 106,
+      "chapter": "Fish",
+      "filename": "Black lime salmon - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chaya’s saffron yoghurt hake",
+      "book_page": 108,
+      "chapter": "Fish",
+      "filename": "Chaya’s saffron yoghurt hake - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Old bay hake and prawn patties",
+      "book_page": 111,
+      "chapter": "Fish",
+      "filename": "Old bay hake and prawn patties - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Smoky tomato and feta prawns",
+      "book_page": 112,
+      "chapter": "Fish",
+      "filename": "Smoky tomato and feta prawns - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Pilpelchuma (or harissa) prawns with spring onions",
+      "book_page": 115,
+      "chapter": "Fish",
+      "filename": "Pilpelchuma (or harissa) prawns with spring onions - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Pan-fried sea bass with bkeila",
+      "book_page": 116,
+      "chapter": "Fish",
+      "filename": "Pan-fried sea bass with bkeila - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Salmon with apricot and coriander pesto",
+      "book_page": 119,
+      "chapter": "Fish",
+      "filename": "Salmon with apricot and coriander pesto - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Jake’s fried mackerel buns",
+      "book_page": 120,
+      "chapter": "Fish",
+      "filename": "Jake’s fried mackerel buns - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Butternut ‘parmigiana’",
+      "book_page": 124,
+      "chapter": "Veggie mains",
+      "filename": "Butternut ‘parmigiana’ - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chickpeas with baharat and orange",
+      "book_page": 126,
+      "chapter": "Veggie mains",
+      "filename": "Chickpeas with baharat and orange - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Braised halloumi with tomatoes and beans",
+      "book_page": 129,
+      "chapter": "Veggie mains",
+      "filename": "Braised halloumi with tomatoes and beans - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Gnocchi with peas and cheese",
+      "book_page": 130,
+      "chapter": "Veggie mains",
+      "filename": "Gnocchi with peas and cheese - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Cauliflower soufflé bake",
+      "book_page": 132,
+      "chapter": "Veggie mains",
+      "filename": "Cauliflower soufflé bake - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Mung beans with courgettes and potatoes",
+      "book_page": 134,
+      "chapter": "Veggie mains",
+      "filename": "Mung beans with courgettes and potatoes - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Stuffed romano peppers",
+      "book_page": 138,
+      "chapter": "Veggie mains",
+      "filename": "Stuffed romano peppers - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Green baked risotto with mozzarella",
+      "book_page": 141,
+      "chapter": "Veggie mains",
+      "filename": "Green baked risotto with mozzarella - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Curried butter lentils",
+      "book_page": 142,
+      "chapter": "Veggie mains",
+      "filename": "Curried butter lentils - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Sweet and sour tofu",
+      "book_page": 145,
+      "chapter": "Veggie mains",
+      "filename": "Sweet and sour tofu - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Roast cauliflower wedges with romesco",
+      "book_page": 146,
+      "chapter": "Veggie mains",
+      "filename": "Roast cauliflower wedges with romesco - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Fennel, grape and olive tarte tatin",
+      "book_page": 148,
+      "chapter": "Veggie mains",
+      "filename": "Fennel, grape and olive tarte tatin - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Courgette pasta with crispy capers",
+      "book_page": 156,
+      "chapter": "Pasta",
+      "filename": "Courgette pasta with crispy capers - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Orecchiette with courgette and chickpeas",
+      "book_page": 157,
+      "chapter": "Pasta",
+      "filename": "Orecchiette with courgette and chickpeas - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Diavolo pasta pie",
+      "book_page": 159,
+      "chapter": "Pasta",
+      "filename": "Diavolo pasta pie - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Butternut carbonara",
+      "book_page": 160,
+      "chapter": "Pasta",
+      "filename": "Butternut carbonara - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Miso mushroom trofie pasta",
+      "book_page": 162,
+      "chapter": "Pasta",
+      "filename": "Miso mushroom trofie pasta - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Leek and lemon paccheri",
+      "book_page": 165,
+      "chapter": "Pasta",
+      "filename": "Leek and lemon paccheri - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "The one sauce (with pasta)",
+      "book_page": 168,
+      "chapter": "Pasta",
+      "filename": "The one sauce (with pasta) - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Casarecce, chickpeas and clams",
+      "book_page": 170,
+      "chapter": "Pasta",
+      "filename": "Casarecce, chickpeas and clams - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Spicy tuna pasta with parmesan cream",
+      "book_page": 173,
+      "chapter": "Pasta",
+      "filename": "Spicy tuna pasta with parmesan cream - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Brown butter rice with pasta and lemon",
+      "book_page": 176,
+      "chapter": "Sides",
+      "filename": "Brown butter rice with pasta and lemon - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Tomato butter rice with black lime",
+      "book_page": 177,
+      "chapter": "Sides",
+      "filename": "Tomato butter rice with black lime - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Baked garlic rice",
+      "book_page": 180,
+      "chapter": "Sides",
+      "filename": "Baked garlic rice - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Green beans with miso and grapefruit",
+      "book_page": 182,
+      "chapter": "Sides",
+      "filename": "Green beans with miso and grapefruit - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Asparagus with miso and olives",
+      "book_page": 183,
+      "chapter": "Sides",
+      "filename": "Asparagus with miso and olives - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Confit courgettes",
+      "book_page": 186,
+      "chapter": "Sides",
+      "filename": "Confit courgettes - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Black lime brussels sprouts",
+      "book_page": 189,
+      "chapter": "Sides",
+      "filename": "Black lime brussels sprouts - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Carob roast onions",
+      "book_page": 192,
+      "chapter": "Sides",
+      "filename": "Carob roast onions - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Braised carrots with orange and old bay gremolata",
+      "book_page": 194,
+      "chapter": "Sides",
+      "filename": "Braised carrots with orange and old bay gremolata - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Roasted cabbage with chilli and garlic chips",
+      "book_page": 196,
+      "chapter": "Sides",
+      "filename": "Roasted cabbage with chilli and garlic chips - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Broccoli with mushroom sprinkle",
+      "book_page": 199,
+      "chapter": "Sides",
+      "filename": "Broccoli with mushroom sprinkle - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Baby corn with harissa honey",
+      "book_page": 200,
+      "chapter": "Sides",
+      "filename": "Baby corn with harissa honey - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Whole roasted kohlrabi",
+      "book_page": 202,
+      "chapter": "Sides",
+      "filename": "Whole roasted kohlrabi - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Spiced roast potatoes with yoghurt",
+      "book_page": 204,
+      "chapter": "Sides",
+      "filename": "Spiced roast potatoes with yoghurt - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Potatoes roasted with tahini and soy",
+      "book_page": 205,
+      "chapter": "Sides",
+      "filename": "Potatoes roasted with tahini and soy - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chicory gratin",
+      "book_page": 208,
+      "chapter": "Sides",
+      "filename": "Chicory gratin - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Cabbage and carrot slaw with tahini, peanuts and soy",
+      "book_page": 212,
+      "chapter": "Salads",
+      "filename": "Cabbage and carrot slaw with tahini, peanuts and soy - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Broccoli mallung",
+      "book_page": 215,
+      "chapter": "Salads",
+      "filename": "Broccoli mallung - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Aubergine, pear and ginger salad",
+      "book_page": 216,
+      "chapter": "Salads",
+      "filename": "Aubergine, pear and ginger salad - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chopped green salad",
+      "book_page": 218,
+      "chapter": "Salads",
+      "filename": "Chopped green salad - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chopped salad with kataifi",
+      "book_page": 219,
+      "chapter": "Salads",
+      "filename": "Chopped salad with kataifi - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Charred green bean salad",
+      "book_page": 222,
+      "chapter": "Salads",
+      "filename": "Charred green bean salad - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Cauliflower pasta salad",
+      "book_page": 225,
+      "chapter": "Salads",
+      "filename": "Cauliflower pasta salad - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Roasted corn salad",
+      "book_page": 226,
+      "chapter": "Salads",
+      "filename": "Roasted corn salad - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Smacked cucumbers with almonds and date molasses",
+      "book_page": 227,
+      "chapter": "Salads",
+      "filename": "Smacked cucumbers with almonds and date molasses - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Butterhead lettuce with pine nut vinaigrette",
+      "book_page": 230,
+      "chapter": "Salads",
+      "filename": "Butterhead lettuce with pine nut vinaigrette - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Little gem with orange, pecans and parmesan",
+      "book_page": 233,
+      "chapter": "Salads",
+      "filename": "Little gem with orange, pecans and parmesan - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Parsnip salad with preserved lemon and watercress",
+      "book_page": 235,
+      "chapter": "Salads",
+      "filename": "Parsnip salad with preserved lemon and watercress - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Roasted courgettes with pistachio salsa and feta",
+      "book_page": 236,
+      "chapter": "Salads",
+      "filename": "Roasted courgettes with pistachio salsa and feta - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Runner beans with kefir and za’atar oil",
+      "book_page": 239,
+      "chapter": "Salads",
+      "filename": "Runner beans with kefir and za’atar oil - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Tomatoes with tamarind gazpacho",
+      "book_page": 242,
+      "chapter": "Salads",
+      "filename": "Tomatoes with tamarind gazpacho - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Tomato and cucumber salad with sweet and salty tahini dressing",
+      "book_page": 243,
+      "chapter": "Salads",
+      "filename": "Tomato and cucumber salad with sweet and salty tahini dressing - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Beetroot and fennel with sour cherries",
+      "book_page": 244,
+      "chapter": "Salads",
+      "filename": "Beetroot and fennel with sour cherries - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Aubergines with capers and dill",
+      "book_page": 246,
+      "chapter": "Salads",
+      "filename": "Aubergines with capers and dill - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Aubergine with caramelised dates and mustard seeds",
+      "book_page": 247,
+      "chapter": "Salads",
+      "filename": "Aubergine with caramelised dates and mustard seeds - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Brown sugar cake with brown sugar cream",
+      "book_page": 252,
+      "chapter": "Desserts",
+      "filename": "Brown sugar cake with brown sugar cream - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Sumac roasted strawberries",
+      "book_page": 253,
+      "chapter": "Desserts",
+      "filename": "Sumac roasted strawberries - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Ma’amoul bars",
+      "book_page": 256,
+      "chapter": "Desserts",
+      "filename": "Ma’amoul bars - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Ginger peach puffs",
+      "book_page": 259,
+      "chapter": "Desserts",
+      "filename": "Ginger peach puffs - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Blueberry and orange clafoutis",
+      "book_page": 263,
+      "chapter": "Desserts",
+      "filename": "Blueberry and orange clafoutis - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Double chocolate shortbreads (with chilli or without)",
+      "book_page": 264,
+      "chapter": "Desserts",
+      "filename": "Double chocolate shortbreads (with chilli or without) - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Baked rice pudding with blackberries and lemon",
+      "book_page": 266,
+      "chapter": "Desserts",
+      "filename": "Baked rice pudding with blackberries and lemon - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Bananas in pyjamas",
+      "book_page": 268,
+      "chapter": "Desserts",
+      "filename": "Bananas in pyjamas - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Saffron custard panettone pudding",
+      "book_page": 270,
+      "chapter": "Desserts",
+      "filename": "Saffron custard panettone pudding - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Chocolate cake",
+      "book_page": 272,
+      "chapter": "Desserts",
+      "filename": "Chocolate cake - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Flourless orange and ricotta polenta cake",
+      "book_page": 275,
+      "chapter": "Desserts",
+      "filename": "Flourless orange and ricotta polenta cake - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Apricot, marmalade and almond pudding",
+      "book_page": 276,
+      "chapter": "Desserts",
+      "filename": "Apricot, marmalade and almond pudding - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Semifreddo with ‘cranko’",
+      "book_page": 278,
+      "chapter": "Desserts",
+      "filename": "Semifreddo with ‘cranko’ - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Lime and yuzu cream with sesame brittle",
+      "book_page": 280,
+      "chapter": "Desserts",
+      "filename": "Lime and yuzu cream with sesame brittle - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Green salsa",
+      "book_page": 286,
+      "chapter": "Fundamentals",
+      "filename": "Green salsa - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Sweet and sour barberry sauce",
+      "book_page": 286,
+      "chapter": "Fundamentals",
+      "filename": "Sweet and sour barberry sauce - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Red or green shatta",
+      "book_page": 287,
+      "chapter": "Fundamentals",
+      "filename": "Red or green shatta - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Sumac soured cream",
+      "book_page": 287,
+      "chapter": "Fundamentals",
+      "filename": "Sumac soured cream - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Spring onion oil",
+      "book_page": 288,
+      "chapter": "Fundamentals",
+      "filename": "Spring onion oil - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Za’atar oil",
+      "book_page": 288,
+      "chapter": "Fundamentals",
+      "filename": "Za’atar oil - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Marmalade vinaigrette (aka ‘a very english dressing’)",
+      "book_page": 289,
+      "chapter": "Fundamentals",
+      "filename": "Marmalade vinaigrette (aka ‘a very english dressing’) - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Pine nut vinaigrette",
+      "book_page": 289,
+      "chapter": "Fundamentals",
+      "filename": "Pine nut vinaigrette - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "The one sauce",
+      "book_page": 290,
+      "chapter": "Fundamentals",
+      "filename": "The one sauce - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Green mayo",
+      "book_page": 291,
+      "chapter": "Fundamentals",
+      "filename": "Green mayo - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Pistachio and za’atar dukkah",
+      "book_page": 291,
+      "chapter": "Fundamentals",
+      "filename": "Pistachio and za’atar dukkah - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Bkeila",
+      "book_page": 292,
+      "chapter": "Fundamentals",
+      "filename": "Bkeila - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Mushroom sprinkle",
+      "book_page": 292,
+      "chapter": "Fundamentals",
+      "filename": "Mushroom sprinkle - Ottolenghi Books.pdf"
+    },
+    {
+      "title": "Middle eastern chilli crisp",
+      "book_page": 293,
+      "chapter": "Fundamentals",
+      "filename": "Middle eastern chilli crisp - Ottolenghi Books.pdf"
+    }
+  ]
+}

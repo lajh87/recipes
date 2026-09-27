@@ -208,9 +208,18 @@
         {% else %}
           <p>Open the original extracted section as plain text when you need to inspect the source directly.</p>
         {% endif %}
+        {% if source_metadata.get('book_page') %}
+          <p>Published book page {{ source_metadata.get('book_page') }}.</p>
+        {% endif %}
         <div class="card-actions">
           {% if recipe.source.format == 'url' and source_metadata.get('source_url') %}
             <a class="button button--secondary" href="{{ source_metadata.get('source_url') }}" target="_blank" rel="noopener noreferrer">Open Source</a>
+          {% endif %}
+          {% if source_metadata.get('book_page') and recipe.source.page_start %}
+            <a class="button button--secondary" href="{{ url_for('cookbook_file', cookbook_id=recipe.cookbook_id) }}#page={{ recipe.source.page_start }}" target="_blank" rel="noopener noreferrer">Open PDF Page</a>
+          {% endif %}
+          {% if source_metadata.get('method_source_url') %}
+            <a class="button button--secondary" href="{{ source_metadata.get('method_source_url') }}" target="_blank" rel="noopener noreferrer">Method Source</a>
           {% endif %}
           <a class="button button--secondary" href="{{ url_for('recipe_raw_text_page', recipe_id=recipe.id) }}">View Raw Text</a>
         </div>

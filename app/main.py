@@ -619,7 +619,7 @@ def build_recipe_tag_rows(
     return rows
 
 
-def load_meal_plan_document(repository: LibraryRepository) -> tuple[MealPlanDocument, list[str]]:
+def load_meal_plan_document(repository: LibraryRepository) -> tuple[MealPlanDocument, list[dict[str, str]]]:
     recipe_references = repository.list_recipe_references()
     meal_plan = load_or_import_meal_plan(
         BASE_DIR.parent,
@@ -631,7 +631,11 @@ def load_meal_plan_document(repository: LibraryRepository) -> tuple[MealPlanDocu
     )
     populate_week_shopping_lists(meal_plan, repository.list_recipes())
     recipe_options = [
-        recipe_option_value(recipe)
+        {
+            "id": recipe.id,
+            "title": recipe.title,
+            "label": recipe_option_value(recipe),
+        }
         for recipe in sorted(
             recipe_references,
             key=lambda item: (item.title.casefold(), item.cookbook_title.casefold()),

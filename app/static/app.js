@@ -633,17 +633,13 @@ function parseMealPlanRecipeOptions() {
   }
 
   return Array.from(datalist.options)
-    .map((option) => option.value.trim())
-    .filter(Boolean)
-    .map((label) => {
-      const idMatch = label.match(/\[([^\]]+)\]\s*$/);
-      if (!idMatch) {
+    .map((option) => {
+      const label = option.value.trim();
+      const recipeId = option.dataset.recipeId?.trim();
+      const title = option.dataset.recipeTitle?.trim();
+      if (!label || !recipeId || !title) {
         return null;
       }
-      const recipeId = idMatch[1];
-      const base = label.slice(0, idMatch.index).trim();
-      const separatorIndex = base.lastIndexOf(" - ");
-      const title = separatorIndex >= 0 ? base.slice(0, separatorIndex).trim() : base;
       const normalizedTitle = normalizeMealPlanText(title);
       return {
         id: recipeId,
@@ -864,11 +860,24 @@ function initMealPlanAutoLink() {
     actionContent.appendChild(placeholder);
   }
 
+  function stopMealPlanRecipeSuggestions(itemInput) {
+    window.clearTimeout(itemInput._mealPlanSuggestionTimer);
+    recipeSuggestionController?.abort();
+    recipeSuggestionRequestId += 1;
+    renderMealPlanRecipeSuggestions([]);
+    if (itemInput.value.trim()) {
+      itemInput.removeAttribute("list");
+    } else {
+      itemInput.setAttribute("list", "meal-plan-recipe-options");
+    }
+  }
+
   function setMealPlanRecipeSelection(itemInput, rowElements, option) {
     itemInput.value = option.title;
     rowElements.recipeIdInput.value = option.id;
     itemInput.dataset.recipeLinked = "true";
     renderMealPlanRowAction(rowElements.actionContent, option);
+    stopMealPlanRecipeSuggestions(itemInput);
   }
 
   function clearMealPlanRecipeSelection(itemInput, rowElements) {
@@ -888,7 +897,7 @@ function initMealPlanAutoLink() {
       const cookbookTitle = String(payload.cookbook_title || payload.collection_title || "Web recipe").trim();
       option = {
         id: String(payload.recipe_id),
-        label: `${title} - ${cookbookTitle} [${payload.recipe_id}]`,
+        label: `${title} - ${cookbookTitle}`,
         title,
         normalizedTitle: normalizeMealPlanText(title),
         tokens: new Set(tokenizeMealPlanValue(title)),
@@ -896,7 +905,6 @@ function initMealPlanAutoLink() {
       recipeOptions.push(option);
     }
     setMealPlanRecipeSelection(itemInput, rowElements, option);
-    renderMealPlanRecipeSuggestions([{ label: option.label }]);
     updateSaveStatus(
       payload.status === "existing" ? "Existing recipe linked. Saving…" : "Recipe imported. Saving…",
       "saving",
@@ -925,6 +933,7 @@ function initMealPlanAutoLink() {
     if (linkedOption && (currentValue === linkedOption.title || currentValue === linkedOption.label)) {
       itemInput.dataset.recipeLinked = "true";
       renderMealPlanRowAction(actionContent, linkedOption);
+      stopMealPlanRecipeSuggestions(itemInput);
       syncMealPlanRowCompletionState(rowElements.row);
       return linkedOption;
     }
@@ -1243,11 +1252,14 @@ function initMealPlanAutoLink() {
   mealPlanForm.addEventListener("input", (event) => {
     const itemInput = event.target.closest("[data-meal-plan-item]");
     if (itemInput instanceof HTMLInputElement) {
-      syncMealPlanItemInput(itemInput);
+      itemInput.setAttribute("list", "meal-plan-recipe-options");
+      const selectedRecipe = syncMealPlanItemInput(itemInput);
       window.clearTimeout(itemInput._mealPlanSuggestionTimer);
-      itemInput._mealPlanSuggestionTimer = window.setTimeout(() => {
-        void loadMealPlanRecipeSuggestions(itemInput.value);
-      }, 120);
+      if (!selectedRecipe) {
+        itemInput._mealPlanSuggestionTimer = window.setTimeout(() => {
+          void loadMealPlanRecipeSuggestions(itemInput.value);
+        }, 120);
+      }
       queueMealPlanSave();
       return;
     }
@@ -1269,7 +1281,7 @@ function initMealPlanAutoLink() {
     const itemInput = event.target.closest("[data-meal-plan-item]");
     if (itemInput instanceof HTMLInputElement) {
       maybeResolveMealPlanItemInput(itemInput);
-      void loadMealPlanRecipeSuggestions(itemInput.value);
+      stopMealPlanRecipeSuggestions(itemInput);
       queueMealPlanSave(120);
     }
   }, true);
@@ -1278,7 +1290,9 @@ function initMealPlanAutoLink() {
     const itemInput = event.target.closest("[data-meal-plan-item]");
     if (itemInput instanceof HTMLInputElement) {
       expandMealPlanRow(itemInput.closest("[data-meal-plan-row]"));
-      void loadMealPlanRecipeSuggestions(itemInput.value);
+      if (itemInput.hasAttribute("list")) {
+        void loadMealPlanRecipeSuggestions(itemInput.value);
+      }
     }
   });
 
@@ -1308,7 +1322,10 @@ function initMealPlanAutoLink() {
 
   mealPlanForm.querySelectorAll("[data-meal-plan-item]").forEach((input) => {
     if (input instanceof HTMLInputElement) {
-      syncMealPlanItemInput(input);
+      const selectedRecipe = syncMealPlanItemInput(input);
+      if (input.value.trim() && !selectedRecipe) {
+        stopMealPlanRecipeSuggestions(input);
+      }
     }
   });
   mealPlanForm.querySelectorAll("[data-meal-plan-row]").forEach((row) => {

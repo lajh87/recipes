@@ -24,7 +24,7 @@
     </datalist>
     <datalist id="meal-plan-recipe-options">
       {% for option in recipe_options %}
-        <option value="{{ option }}"></option>
+        <option value="{{ option.label }}" data-recipe-id="{{ option.id }}" data-recipe-title="{{ option.title }}"></option>
       {% endfor %}
     </datalist>
 
@@ -115,7 +115,7 @@
                     id="meal-item-{{ week.id }}-{{ entry.id }}"
                     type="text"
                     name="{{ row_prefix }}__title"
-                    list="meal-plan-recipe-options"
+                    {% if not entry.title %}list="meal-plan-recipe-options"{% endif %}
                     value="{{ entry.title or (entry.recipe.title if entry.recipe else '') }}"
                     placeholder="Recipe or custom meal"
                     data-meal-plan-item

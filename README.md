@@ -186,6 +186,57 @@ The UI is backed by a small JSON API:
 - `POST /api/recipe-imports/preview`
 - `POST /api/recipe-imports/{import_id}/commit`
 
+## MCP Recipe Search
+
+The repository includes a local MCP server with five tools:
+
+- `search_recipes` accepts a keyword query, a list of required ingredients, or
+  both, and returns up to 20 concise matches. Keyword searches use the same
+  ranking as the web app, including semantic search when `OPENAI_API_KEY` is
+  configured.
+- `get_recipe` retrieves full ingredients, method steps, source attribution and available metadata.
+- `get_meal_plan` reads a saved dated week without importing or modifying data.
+- `create_meal_plan` adds a dated week to the existing meal planner. Pass
+  `start_on` as `YYYY-MM-DD` and `meals` as a list of weekday, meal type, and
+  either a `recipe_id` from search or a free-text `title`. Optional `notes` are
+  stored on the week. Weekdays are Monday through Sunday, and meal types are
+  Breakfast, Lunch, or Dinner. An existing week with the same start date is
+  rejected.
+- `update_meal_plan` replaces the meals and notes for an existing dated week.
+  Pass the same `start_on` and `meals` fields, plus `notes`. Other weeks remain
+  intact, and recipe IDs are validated against the library.
+
+Install the Python dependencies and run the server over stdio:
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m app.mcp_server
+```
+
+Configure an MCP client to launch `python3` with arguments
+`-m app.mcp_server`, using this repository as its working directory. The
+server reads the same `.env` settings as the web app and needs access to the
+library's Redis datastore. Results include recipe IDs and web paths such as
+`/recipes/{id}`. The tool requires at least a query or one ingredient; its
+`limit` defaults to 10 and may be set from 1 to 20.
+
+For example, a `create_meal_plan` call can use these arguments:
+
+```json
+{
+  "start_on": "2026-10-18",
+  "meals": [
+    {"weekday": "Monday", "meal": "Dinner", "recipe_id": "recipe-id-from-search"},
+    {"weekday": "Tuesday", "meal": "Lunch", "title": "Leftovers"}
+  ],
+  "notes": "Buy fresh herbs"
+}
+```
+
+If the library runs only in Docker, an MCP client can instead launch `docker`
+with arguments `compose exec -T app python -m app.mcp_server` from this
+repository while the `app` service is running.
+
 ## Repository Layout
 
 ```text
@@ -256,3 +307,9 @@ scripts/restore_recipes.sh scripts/recipes_backup.env "$HOME/Library/CloudStorag
 - scan-only OCR is not implemented
 - semantic search returns keyword-only results when OpenAI embeddings are unavailable
 - the app is designed around a shared external datastore network rather than a fully self-contained local compose stack
+
+## Private ChatGPT GPT
+
+A separate, API-key-protected service supports the **Heley Family Cookbook** custom GPT at `https://recipes-open.heley.uk`. It shares the MCP operations and datastores while exposing no cookbook UI, uploads or administrative routes. The MCP server also provides `get_recipe` and side-effect-free `get_meal_plan` tools.
+
+See [deployment and ChatGPT setup](docs/gpt/setup.md), [GPT instructions](docs/gpt/instructions.md), and the [Actions OpenAPI schema](docs/gpt/openapi.json).

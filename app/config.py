@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     app_name: str = "Heley Family Cookbook"
     app_env: str = "development"
     app_port: int = 8080
+    gpt_api_key: str = ""
 
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "minioadmin"

@@ -1565,6 +1565,11 @@ async def update_meal_plan_form(
         target_week = next((week for week in meal_plan.weeks if week.id == week_id), None)
         if target_week:
             append_blank_row(target_week)
+    elif planner_action.startswith("remove_row:"):
+        week_id, _, row_id = planner_action.split(":", 1)[1].partition(":")
+        target_week = next((week for week in meal_plan.weeks if week.id == week_id), None)
+        if target_week:
+            target_week.entries = [entry for entry in target_week.entries if entry.id != row_id]
     elif planner_action.startswith("remove:"):
         remove_week(meal_plan, planner_action.split(":", 1)[1])
 
@@ -1578,6 +1583,8 @@ async def update_meal_plan_form(
         notice_text = "Added a new week."
     elif planner_action.startswith("add_row:"):
         notice_text = "Added a new row."
+    elif planner_action.startswith("remove_row:"):
+        notice_text = "Deleted the row."
     elif planner_action.startswith("remove:"):
         notice_text = "Removed the week."
     else:

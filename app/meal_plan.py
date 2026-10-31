@@ -512,8 +512,6 @@ def parse_meal_plan_form(
                     entry.title = recipe.title
             week.entries.append(entry)
 
-        if not week.entries:
-            week.entries.append(create_blank_row())
         sort_week_entries(week)
         document.weeks.append(week)
 
@@ -885,7 +883,7 @@ def _week_from_dict(payload: dict[str, object]) -> MealPlanWeek:
 
     # Backward compatibility for older structured plans that used fixed days/meals.
     days_payload = payload.get("days")
-    if not week.entries and isinstance(days_payload, list):
+    if not isinstance(entries_payload, list) and isinstance(days_payload, list):
         for day_item in days_payload:
             if not isinstance(day_item, dict):
                 continue
@@ -906,7 +904,7 @@ def _week_from_dict(payload: dict[str, object]) -> MealPlanWeek:
                 entry.recipe_id = recipe_id or None
                 if entry.title or entry.recipe_id or entry.weekday or entry.meal:
                     week.entries.append(entry)
-    if not week.entries:
+    if not week.entries and not isinstance(entries_payload, list):
         week.entries.append(create_blank_row())
     sort_week_entries(week)
     return week

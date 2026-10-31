@@ -176,7 +176,16 @@
                     </span>
                   </div>
                 </div>
+                <button
+                  class="button button--secondary meal-plan-row__delete"
+                  type="submit"
+                  name="planner_action"
+                  value="remove_row:{{ week.id }}:{{ entry.id }}"
+                  aria-label="Delete row: {{ entry.title or 'empty meal' }}"
+                >Delete Row</button>
               </section>
+            {% else %}
+              <p class="meal-plan-week__empty">No meals planned for this week. Use Add Row to plan a meal.</p>
             {% endfor %}
           </div>
 

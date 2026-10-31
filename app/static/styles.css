@@ -2091,7 +2091,7 @@ body.is-recipe-import-fallback::before {
 
 .meal-plan-week__header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 2fr);
   gap: 18px;
   align-items: end;
   min-width: 0;
@@ -2116,6 +2116,7 @@ body.is-recipe-import-fallback::before {
   font-family: var(--font-display);
   font-size: 1.45rem;
   padding: 14px 16px;
+  width: 100%;
   max-width: 340px;
 }
 
@@ -2145,6 +2146,14 @@ body.is-recipe-import-fallback::before {
   gap: 10px;
 }
 
+.meal-plan-week__empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+}
+
 .meal-plan-week__columns {
   display: grid;
   grid-template-columns: minmax(148px, 1fr) minmax(148px, 1fr) minmax(0, 2.7fr) 88px minmax(160px, 1.1fr);
@@ -2160,7 +2169,7 @@ body.is-recipe-import-fallback::before {
 
 .meal-plan-row {
   display: grid;
-  grid-template-columns: minmax(260px, 2.2fr) minmax(320px, 1.4fr);
+  grid-template-columns: minmax(260px, 2.2fr) minmax(384px, 1.4fr) auto;
   gap: 12px;
   align-items: center;
   padding: 14px 16px;
@@ -2175,6 +2184,14 @@ body.is-recipe-import-fallback::before {
 .meal-plan-row.is-complete {
   background: linear-gradient(180deg, #f7fbf7, #edf7ef);
   border-color: rgba(36, 97, 58, 0.16);
+}
+
+.meal-plan-row__delete {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 44px;
+  padding-inline: 12px;
+  color: var(--danger, #8d261f);
 }
 
 .meal-plan-row__item,
@@ -2983,10 +3000,15 @@ body.is-recipe-import-fallback::before {
   }
 
   .meal-plan-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .meal-plan-row__delete {
+    grid-column: 2;
   }
 
   .meal-plan-row__meta {
+    grid-column: 1 / -1;
     grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(72px, 0.55fr) minmax(132px, 1fr);
   }
 
@@ -3157,11 +3179,17 @@ body.is-recipe-import-fallback::before {
   }
 
   .meal-plan-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 6px;
     padding: 7px;
     border-radius: var(--radius-sm);
     box-shadow: none;
+  }
+
+  .meal-plan-row__delete {
+    padding: 0 8px;
+    font-size: 0.72rem;
+    border-radius: 8px;
   }
 
   .meal-plan-row__item {

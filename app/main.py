@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.bbc_goodfood_pdf import extract_bbc_goodfood_pdf
 from app.config import Settings, get_settings
+from app.home_assistant import router as home_assistant_router
 from app.epub import build_epub_chapter_map, normalize_epub_path
 from app.extractor import OpenAIRecipeExtractor, RecipeDraft
 from app.jamie_oliver_pdf import extract_jamie_oliver_pdf
@@ -167,6 +168,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Heley Family Cookbook", lifespan=lifespan)
+app.include_router(home_assistant_router)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 BRAND_IMAGE_MAP = {
     "cottage": BASE_DIR.parent / "data-raw" / "cottage.png",

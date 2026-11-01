@@ -1,0 +1,62 @@
+# Copy into /config/packages/ after enabling packages. See docs/alexa-home-assistant.md.
+# This merges with your existing Alexa smart-home configuration.
+alexa: {}
+
+rest_command:
+  family_cookbook_meal_plan:
+    url: !secret family_cookbook_meal_plan_url
+    method: get
+    headers:
+      authorization: !secret family_cookbook_authorization
+      accept: application/json
+    timeout: 3
+    verify_ssl: true
+
+intent_script:
+  TonightDinnerIntent:
+    description: Read tonight's dinner from the saved family meal plan.
+    mode: parallel
+    action:
+      - variables:
+          cookbook_result: {}
+      - action: rest_command.family_cookbook_meal_plan
+        response_variable: cookbook_result
+        continue_on_error: true
+      - stop: ""
+        response_variable: cookbook_result
+    speech:
+      type: plain
+      text: >-
+        {% set result = action_response | default({}, true) %}
+        {% set body = result.get('content', {}) if result is mapping else {} %}
+        {% if result is mapping and result.get('status') == 200
+              and body is mapping and body.get('tonight_speech') is string
+              and body.get('tonight_speech') | trim %}
+          {{ body['tonight_speech'] }}
+        {% else %}
+          I can't reach your meal plan right now. Please try again shortly.
+        {% endif %}
+
+  RemainingDinnersIntent:
+    description: Read unchecked dinners in the saved plan covering today.
+    mode: parallel
+    action:
+      - variables:
+          cookbook_result: {}
+      - action: rest_command.family_cookbook_meal_plan
+        response_variable: cookbook_result
+        continue_on_error: true
+      - stop: ""
+        response_variable: cookbook_result
+    speech:
+      type: plain
+      text: >-
+        {% set result = action_response | default({}, true) %}
+        {% set body = result.get('content', {}) if result is mapping else {} %}
+        {% if result is mapping and result.get('status') == 200
+              and body is mapping and body.get('remaining_speech') is string
+              and body.get('remaining_speech') | trim %}
+          {{ body['remaining_speech'] }}
+        {% else %}
+          I can't reach your meal plan right now. Please try again shortly.
+        {% endif %}

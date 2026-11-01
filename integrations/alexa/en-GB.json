@@ -1,0 +1,38 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "family cookbook",
+      "intents": [
+        {
+          "name": "TonightDinnerIntent",
+          "slots": [],
+          "samples": [
+            "what is for dinner tonight",
+            "what's for dinner tonight",
+            "what is for dinner",
+            "what's for dinner",
+            "what are we having for dinner tonight",
+            "tell me tonight's dinner"
+          ]
+        },
+        {
+          "name": "RemainingDinnersIntent",
+          "slots": [],
+          "samples": [
+            "what is on my meal plan",
+            "what's on my meal plan",
+            "what is on my meal plan this week",
+            "what dinners are left this week",
+            "list the remaining dinners",
+            "read my meal plan"
+          ]
+        },
+        {"name": "AMAZON.HelpIntent", "samples": []},
+        {"name": "AMAZON.StopIntent", "samples": []},
+        {"name": "AMAZON.CancelIntent", "samples": []},
+        {"name": "AMAZON.FallbackIntent", "samples": []}
+      ],
+      "types": []
+    }
+  }
+}

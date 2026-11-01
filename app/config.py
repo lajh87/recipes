@@ -3,8 +3,9 @@ from __future__ import annotations
 from functools import lru_cache
 import hashlib
 from typing import Optional
+from zoneinfo import ZoneInfo
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_port: int = 8080
     gpt_api_key: str = ""
+    home_assistant_api_key: str = ""
+    meal_plan_timezone: str = "Europe/London"
 
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "minioadmin"
@@ -40,6 +43,15 @@ class Settings(BaseSettings):
     derived_prefix: str = "derived"
     max_upload_mb: int = 500
     allowed_extensions_raw: str = Field(default="pdf,epub,mobi,azw3", alias="ALLOWED_EXTENSIONS")
+
+    @field_validator("meal_plan_timezone")
+    @classmethod
+    def valid_meal_plan_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (KeyError, ValueError) as exc:
+            raise ValueError("MEAL_PLAN_TIMEZONE must be a valid IANA timezone.") from exc
+        return value
 
     @property
     def allowed_extensions(self) -> set[str]:

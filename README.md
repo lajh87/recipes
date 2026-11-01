@@ -53,6 +53,13 @@ App-owned schema:
 - `/meal-plan` stores a structured week-by-week planner in Redis and can link slots back to recipes
 - if no structured meal plan exists yet, the app can seed one from recent sections in `data-raw/recipes.txt`
 
+### Alexa And Home Assistant
+
+Ask Alexa what's for dinner tonight or which unchecked dinners remain in the
+saved plan covering today. A read-only bearer-protected endpoint feeds Home
+Assistant intents, and a private Alexa custom skill replies on the Echo you ask.
+See [setup, configuration examples, and verification](docs/alexa-home-assistant.md).
+
 ### Collections
 
 Built-in collections include:
@@ -160,6 +167,8 @@ Important values:
 - `OPENAI_SEARCH_MODEL`
 - `DATASTORE_NETWORK_NAME`
 - `CLOUDFLARED_TOKEN`
+- `HOME_ASSISTANT_API_KEY`
+- `MEAL_PLAN_TIMEZONE`
 
 Default upload limits and types:
 
@@ -183,6 +192,7 @@ The UI is backed by a small JSON API:
 - `GET /api/ingredients`
 - `GET /api/search`
 - `GET /api/meal-plan/recipe-suggestions`
+- `GET /api/integrations/home-assistant/meal-plan` (dedicated bearer key required)
 - `POST /api/recipe-imports/preview`
 - `POST /api/recipe-imports/{import_id}/commit`
 
